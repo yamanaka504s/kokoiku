@@ -1171,6 +1171,11 @@ async function generateRouteMap() {
     document.getElementById('btn_route_clear').style.display = 'inline-flex';
     showRouteInfo(routeData);
 
+    // Sync travel time field with OSRM result
+    var travelStr = '約' + durMin + '分（一般道・約' + distKm + 'km）';
+    document.getElementById('travelTime').value = travelStr;
+    localStorage.setItem('outing_travelTime', travelStr);
+
     localStorage.setItem('outing_route_data', JSON.stringify(routeData));
     try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
     toast('ルートマップを作成しました');
