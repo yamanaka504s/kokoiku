@@ -427,8 +427,16 @@
       </div>
 
       <!-- Destination -->
-      <div class="field full"><label>外出先</label><input type="text" id="destination" placeholder="例：倉敷美観地区、後楽園、イオンモール倉敷"></div>
-      <div class="field full"><label>外出先の住所</label><input type="text" id="destAddress" placeholder="例：岡山県倉敷市中央1-4-8"></div>
+      <div class="field full">
+        <label>外出先</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="destination" placeholder="例：倉敷美観地区、後楽園、イオンモール倉敷" style="flex:1;">
+          <button class="btn-calc" id="btnSearchAddr" onclick="searchDestAddress()" style="white-space:nowrap;padding:10px 14px;">
+            <span class="spinner" id="spin_addrsearch"></span>住所検索
+          </button>
+        </div>
+      </div>
+      <div class="field full"><label>外出先の住所 <span style="font-weight:400;font-size:.75rem;color:var(--text-light);">※上の「住所検索」で自動入力されます</span></label><input type="text" id="destAddress" placeholder="例：岡山県倉敷市中央1-4-8"></div>
 
       <!-- Travel Time -->
       <div class="field full">
@@ -1101,6 +1109,60 @@ async function geocodeAddress(address, label) {
   } catch(e) {}
 
   throw new Error(label + 'の住所が見つかりません');
+}
+
+async function searchDestAddress() {
+  var dest = getVal('destination');
+  if (!dest) { toast('外出先を入力してください'); return; }
+
+  var btn = document.getElementById('btnSearchAddr');
+  var spinner = document.getElementById('spin_addrsearch');
+  btn.disabled = true; spinner.style.display = 'inline-block';
+
+  try {
+    // 1st: GSI search
+    var gsi = await geocodeWithGSI(dest);
+    if (gsi) {
+      document.getElementById('destAddress').value = gsi.display;
+      localStorage.setItem('outing_destAddress', gsi.display);
+      toast('住所を取得しました: ' + gsi.display);
+      return;
+    }
+
+    // 2nd: Nominatim (facility names)
+    try {
+      var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=jp&accept-language=ja&q=' + encodeURIComponent(dest);
+      var res = await fetch(url);
+      var data = await res.json();
+      if (data.length) {
+        document.getElementById('destAddress').value = data[0].display_name;
+        localStorage.setItem('outing_destAddress', data[0].display_name);
+        toast('住所を取得しました');
+        return;
+      }
+    } catch(e) {}
+
+    // 3rd: Claude AI
+    try {
+      var result = await callClaude(
+        '日本の施設名や場所名から正式な住所を調べてください。住所のみを出力し、他のテキストは含めないでください。',
+        [{ role: 'user', content: dest }], 100
+      );
+      var addr = result.trim().replace(/^["']|["']$/g, '');
+      if (addr.length > 5) {
+        document.getElementById('destAddress').value = addr;
+        localStorage.setItem('outing_destAddress', addr);
+        toast('住所を取得しました');
+        return;
+      }
+    } catch(e) {}
+
+    toast('住所が見つかりませんでした');
+  } catch(e) {
+    toast('住所検索に失敗しました');
+  } finally {
+    btn.disabled = false; spinner.style.display = 'none';
+  }
 }
 
 async function generateRouteMap() {
