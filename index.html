@@ -1,0 +1,2153 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ココイク - 個別外出計画書作成</title>
+<style>
+  :root {
+    --primary: #3a8f7c;
+    --primary-light: #e8f5f1;
+    --primary-dark: #2a7363;
+    --accent: #f5a623;
+    --bg: #f5f9f7;
+    --card: #ffffff;
+    --text: #333333;
+    --text-light: #777777;
+    --border: #d2e0d8;
+    --success: #4caf50;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff; text-align: center; padding: 28px 16px 22px;
+    position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(0,0,0,.15);
+  }
+  header h1 { font-size: 1.5rem; letter-spacing: .06em; }
+  header p { font-size: .85rem; opacity: .85; margin-top: 4px; }
+  .container { max-width: 820px; margin: 0 auto; padding: 24px 16px 80px; }
+  .section {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  }
+  .section-title {
+    font-size: 1.1rem; font-weight: 700; color: var(--primary); margin-bottom: 18px;
+    padding-bottom: 8px; border-bottom: 2px solid var(--primary-light);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .field label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: 4px; color: #555; }
+  .field input, .field textarea, .field select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: .95rem; font-family: inherit; transition: border-color .2s;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(58,143,124,.15);
+  }
+  .field textarea { resize: vertical; min-height: 80px; }
+
+  /* Radio group */
+  .radio-group { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+  .radio-label {
+    display: flex; align-items: center; gap: 6px; font-size: .9rem; cursor: pointer;
+    padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px;
+    transition: all .2s; background: #fff;
+  }
+  .radio-label:has(input:checked) {
+    border-color: var(--primary); background: var(--primary-light); font-weight: 600;
+  }
+  .radio-label input[type="radio"] { accent-color: var(--primary); }
+
+  /* Travel time row */
+  .travel-row { display: flex; gap: 8px; align-items: center; }
+  .travel-row input { flex: 1; }
+  .travel-row .btn-calc {
+    white-space: nowrap; padding: 10px 14px; background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff; border: none; border-radius: 8px; font-size: .82rem; font-weight: 600;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+  }
+  .travel-row .btn-calc:hover { opacity: .88; }
+  .travel-row .btn-calc:disabled { opacity: .5; cursor: not-allowed; }
+  .travel-row .btn-calc .spinner {
+    width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.3);
+    border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: none;
+  }
+
+  /* Setup */
+  .setup-overlay {
+    display: flex; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    z-index: 500; justify-content: center; align-items: center; padding: 20px;
+  }
+  .setup-overlay.hidden { display: none; }
+  .setup-box {
+    background: #fff; border-radius: 16px; padding: 36px 32px; max-width: 420px;
+    width: 100%; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,.2);
+  }
+  .setup-box h2 { font-size: 1.2rem; color: var(--primary); margin-bottom: 20px; }
+  .setup-box label { display: block; font-size: .9rem; font-weight: 600; color: #555; margin-bottom: 6px; text-align: left; }
+  .setup-box input, .setup-box select {
+    width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 1rem; font-family: inherit; margin-bottom: 18px;
+  }
+  .setup-box input:focus, .setup-box select:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(58,143,124,.15);
+  }
+  .setup-box .btn-start {
+    width: 100%; padding: 14px; background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer;
+  }
+  .setup-box .btn-start:hover { opacity: .88; }
+
+  /* DateTime */
+  .datetime-row { display: flex; gap: 10px; align-items: center; }
+  .datetime-row input, .datetime-row select {
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: .95rem; font-family: inherit;
+  }
+  .datetime-row input:focus, .datetime-row select:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(58,143,124,.15);
+  }
+  .datetime-row input[type="date"] { flex: 1; }
+  .datetime-row select { width: 80px; }
+  .datetime-row span { font-weight: 600; color: #555; font-size: .9rem; }
+
+  /* AI */
+  .ai-field { margin-bottom: 24px; }
+  .ai-field label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: 4px; color: #555; }
+  .ai-field textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: .95rem; font-family: inherit; resize: vertical; min-height: 100px;
+  }
+  .ai-field textarea:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(58,143,124,.15);
+  }
+  .ai-result {
+    margin-top: 8px; background: var(--primary-light); border: 1px solid #c8e0d8;
+    border-radius: 8px; padding: 18px 16px 12px; font-size: .93rem; display: none; position: relative;
+  }
+  .ai-result .result-label {
+    position: absolute; top: -10px; left: 12px; background: var(--primary); color: #fff;
+    font-size: .7rem; padding: 1px 10px; border-radius: 10px; font-weight: 600;
+  }
+  .ai-result.show { display: block; }
+  .ai-result .result-text {
+    display: block; width: 100%; min-height: 40px; margin-bottom: 10px; padding: 8px 10px;
+    border: 1px solid #c0d8d0; border-radius: 6px; font-size: .93rem; font-family: inherit;
+    line-height: 1.7; resize: none; overflow: hidden; background: #fff;
+  }
+  .ai-result .result-text:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(58,143,124,.15);
+  }
+  .ai-btn-row { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .btn-ai {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff; border: none; padding: 8px 16px; border-radius: 8px;
+    font-size: .82rem; font-weight: 600; cursor: pointer;
+  }
+  .btn-ai:hover { opacity: .88; }
+  .btn-ai:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-ai .spinner {
+    width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3);
+    border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn-ai-sub {
+    background: #fff; color: var(--primary); border: 1.5px solid var(--primary);
+    padding: 7px 14px; border-radius: 8px; font-size: .8rem; font-weight: 600; cursor: pointer;
+  }
+  .btn-ai-sub:hover { background: var(--primary-light); }
+  .btn-ai-sub:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-revert {
+    background: #fff; color: #888; border: 1.5px solid #ccc;
+    padding: 7px 14px; border-radius: 8px; font-size: .8rem; font-weight: 600; cursor: pointer;
+  }
+  .btn-revert:hover { background: #f5f5f5; }
+  .btn-ai-all {
+    width: 100%; padding: 14px; font-size: 1rem; border-radius: 10px; margin-top: 4px; justify-content: center;
+  }
+
+  /* Destination Info & Photos */
+  .dest-photos-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px; margin-top: 12px;
+  }
+  .dest-photo-card {
+    border-radius: 10px; overflow: hidden; border: 1px solid var(--border);
+    background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .dest-photo-card img { width: 100%; height: 160px; object-fit: cover; display: block; }
+  .dest-photo-card .photo-caption {
+    padding: 6px 10px; font-size: .7rem; color: var(--text-light);
+    border-top: 1px solid var(--border); line-height: 1.4;
+  }
+  .dest-photo-card .photo-caption a { color: var(--primary); text-decoration: none; }
+  .dest-photo-card .photo-caption a:hover { text-decoration: underline; }
+
+  /* Illustration */
+  .illust-area {
+    margin-top: 8px; text-align: center; display: none;
+    background: var(--primary-light); border: 1px solid #c8e0d8; border-radius: 8px;
+    padding: 18px 16px 12px; position: relative;
+  }
+  .illust-area.show { display: block; }
+  .illust-area .result-label {
+    position: absolute; top: -10px; left: 12px; background: var(--primary); color: #fff;
+    font-size: .7rem; padding: 1px 10px; border-radius: 10px; font-weight: 600;
+  }
+  .illust-area svg, .illust-area img { max-width: 100%; width: 100%; height: auto; border-radius: 8px; }
+
+  /* Action */
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  .btn {
+    flex: 1; min-width: 160px; padding: 14px 20px; border: none; border-radius: 10px;
+    font-size: 1rem; font-weight: 700; cursor: pointer; text-align: center;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-preview { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; }
+  .btn-print { background: #555; color: #fff; }
+  .btn-clear { background: #eee; color: #555; flex: 0; min-width: 100px; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
+    z-index: 200; justify-content: center; align-items: flex-start; padding: 10px; overflow-y: auto;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal { background: #fff; border-radius: 14px; max-width: 800px; width: 100%; margin: 10px auto; overflow: hidden; box-sizing: border-box; }
+  .modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; background: var(--primary); color: #fff;
+  }
+  .modal-header h2 { font-size: 1.1rem; }
+  .modal-close { background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; }
+  .modal-body { padding: 12px 16px; overflow-x: hidden; word-break: break-word; }
+  .modal-body * { max-width: 100%; box-sizing: border-box; }
+  .modal-actions {
+    padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end;
+  }
+  .modal-actions .btn { flex: 0; min-width: 140px; font-size: .9rem; padding: 10px 20px; }
+  .btn-copy-doc { background: var(--success); color: #fff; }
+
+  /* Print Doc */
+  .print-doc { font-size: .85rem; }
+  .print-doc h2 { text-align: center; font-size: 1.2rem; margin: 0 0 0px; padding: 0; color: var(--primary-dark); }
+  .print-doc .event-subtitle { text-align: center; font-size: 1rem; color: var(--accent); font-weight: 700; margin: 2px 0 2px; }
+  .print-doc .subtitle { text-align: center; font-size: .78rem; color: var(--text-light); margin: 0 0 8px; padding: 0; }
+  .print-doc .illust-print { text-align: center; margin: 0 0 10px; }
+  .print-doc .illust-print svg, .print-doc .illust-print img { max-width: 400px; width: 400px; height: auto; border-radius: 6px; }
+  .print-doc { overflow-x: hidden; max-width: 100%; }
+  .print-doc table { width: 100%; border-collapse: collapse; margin-bottom: 12px; table-layout: fixed; word-wrap: break-word; overflow-wrap: break-word; }
+  .print-doc th, .print-doc td {
+    border: 1px solid #ccc; padding: 5px 10px; text-align: left; vertical-align: top; font-size: .83rem;
+  }
+  .print-doc th { background: var(--primary-light); font-weight: 600; white-space: nowrap; }
+  .print-doc .section-heading {
+    font-size: .92rem; font-weight: 700; color: var(--primary);
+    margin: 10px 0 4px; padding-bottom: 2px; border-bottom: 1.5px solid var(--primary-light);
+  }
+  .print-doc .text-block { padding: 4px 0 8px; white-space: pre-wrap; line-height: 1.6; font-size: .83rem; }
+  .print-doc .dest-photos-print { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0 12px; }
+  .print-doc .dest-photos-print img { width: 200px; height: 140px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; }
+  .print-doc .dest-photos-print .photo-src { font-size: .68rem; color: #999; margin-top: 2px; }
+
+  @media print {
+    @page { margin: 10mm 10mm; }
+    body { background: #fff; font-size: 10pt; margin: 0; padding: 0; }
+    header, .container > .section, .setup-overlay,
+    .modal-header, .modal-actions, .no-print { display: none !important; }
+    .modal-overlay { position: static; display: block !important; background: none; padding: 0; margin: 0; }
+    .modal { border-radius: 0; box-shadow: none; margin: 0; padding: 0; max-width: 100%; overflow: visible; }
+    .modal-body { padding: 0; margin: 0; }
+    .print-doc { font-size: 10pt; margin: 0; padding: 0; max-width: 100%; overflow: visible; }
+    .print-doc h2 { font-size: 14pt; margin: 0 0 0; padding: 0; }
+    .print-doc .event-subtitle { font-size: 12pt; margin: 1px 0 1px; }
+    .print-doc .subtitle { margin: 0 0 4px; padding: 0; }
+    .print-doc .illust-print { margin: 0 0 6px; }
+    .print-doc .illust-print svg, .print-doc .illust-print img { max-width: 360px; width: 360px; }
+    .print-doc table { width: 100%; table-layout: fixed; word-wrap: break-word; overflow-wrap: break-word; }
+    .print-doc th, .print-doc td { padding: 3px 6px; font-size: 9pt; word-wrap: break-word; overflow-wrap: break-word; }
+    .print-doc th { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; white-space: nowrap; width: auto; }
+    .print-doc .section-heading { font-size: 11pt; margin: 6px 0 2px; }
+    .print-doc .text-block { font-size: 9.5pt; line-height: 1.5; padding: 2px 0 4px; }
+    .print-doc .dest-photos-print img { width: 180px; height: 120px; }
+  }
+
+  /* SP mode */
+  body.sp-mode .container { padding: 12px 8px 60px; }
+  body.sp-mode .section { padding: 16px 12px; margin-bottom: 14px; }
+  body.sp-mode .form-grid { grid-template-columns: 1fr; gap: 12px; }
+  body.sp-mode .section-title { font-size: 1rem; }
+  body.sp-mode header { padding: 18px 12px 14px; }
+  body.sp-mode header h1 { font-size: 1.2rem; }
+  body.sp-mode .radio-group { flex-direction: column; gap: 8px; }
+  body.sp-mode .ai-field textarea { min-height: 70px; font-size: .9rem; }
+  body.sp-mode .ai-result .result-text { font-size: .88rem; }
+  body.sp-mode .ai-btn-row { gap: 4px; }
+  body.sp-mode .btn-ai-sub { padding: 6px 10px; font-size: .75rem; }
+  body.sp-mode .btn-revert { padding: 6px 10px; font-size: .75rem; }
+  body.sp-mode .btn-ai { padding: 7px 12px; font-size: .78rem; }
+  body.sp-mode .btn { padding: 12px 14px; font-size: .9rem; min-width: 0; }
+  body.sp-mode .datetime-row { flex-wrap: wrap; }
+  body.sp-mode .dest-photos-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  body.sp-mode .dest-photo-card img { height: 120px; }
+  body.sp-mode .modal-overlay { padding: 5px; }
+  body.sp-mode .modal { margin: 5px auto; border-radius: 10px; }
+  body.sp-mode .modal-body { padding: 10px 10px; }
+  body.sp-mode .modal-header { padding: 10px 12px; }
+  body.sp-mode .print-doc { font-size: .8rem; }
+  body.sp-mode .print-doc h2 { font-size: 1rem; }
+  body.sp-mode .print-doc .event-subtitle { font-size: .9rem; }
+  body.sp-mode .print-doc .section-heading { font-size: .85rem; }
+  body.sp-mode .print-doc .text-block { font-size: .8rem; }
+  body.sp-mode .print-doc .illust-print img { max-width: 100%; width: 100%; }
+  body.sp-mode .print-doc table { display: block; }
+  body.sp-mode .print-doc tr { display: flex; flex-wrap: wrap; border-bottom: 1px solid #ccc; }
+  body.sp-mode .print-doc th,
+  body.sp-mode .print-doc td { display: block; border: none; border-bottom: none; }
+  body.sp-mode .print-doc th { width: 100%; background: var(--primary-light); padding: 4px 10px; font-size: .82rem; }
+  body.sp-mode .print-doc td { width: 100%; padding: 4px 10px 8px; font-size: .9rem; }
+  body.sp-mode .modal-actions { flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+  body.sp-mode .modal-actions .btn { flex: 1; min-width: 0; padding: 10px 8px; font-size: .82rem; }
+
+  @media (max-width: 600px) {
+    .form-grid { grid-template-columns: 1fr; }
+    header h1 { font-size: 1.2rem; }
+    .section { padding: 18px 16px; }
+    .datetime-row { flex-wrap: wrap; }
+    .radio-group { flex-direction: column; gap: 8px; }
+    .dest-photos-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: #333; color: #fff; padding: 12px 24px; border-radius: 10px;
+    font-size: .9rem; z-index: 300; opacity: 0; transition: all .3s;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  /* Route Map */
+  .route-map-wrap {
+    margin-top: 12px; display: none; background: var(--primary-light);
+    border: 1px solid #c8e0d8; border-radius: 10px; padding: 16px; position: relative;
+  }
+  .route-map-wrap.show { display: block; }
+  .route-map-wrap .result-label {
+    position: absolute; top: -10px; left: 12px; background: var(--primary); color: #fff;
+    font-size: .7rem; padding: 1px 10px; border-radius: 10px; font-weight: 600;
+  }
+  #routeMap { height: 380px; border-radius: 8px; border: 1px solid var(--border); z-index: 1; }
+  .route-info {
+    margin-top: 10px; font-size: .85rem; color: var(--text); line-height: 1.6;
+    background: #fff; padding: 10px 14px; border-radius: 8px; border: 1px solid #c8e0d8;
+  }
+  .route-info strong { color: var(--primary); }
+  .print-doc .route-map-print { text-align: center; margin: 8px 0 12px; }
+  .print-doc .route-map-print img {
+    max-width: 100%; width: 700px; height: auto; border-radius: 6px; border: 1px solid #ddd;
+  }
+  .print-doc .route-map-print .map-src { font-size: .68rem; color: #999; margin-top: 2px; }
+  @media print {
+    .print-doc .route-map-print img { width: 100%; max-width: 100%; }
+  }
+  body.sp-mode #routeMap { height: 280px; }
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+</head>
+<body>
+
+<!-- Initial Setup -->
+<div class="setup-overlay" id="setupOverlay">
+  <div class="setup-box">
+    <h2>&#128694; ココイクへようこそ</h2>
+    <label>担当者名（名字だけでもOK）</label>
+    <input type="text" id="setupPlanner" placeholder="例：佐藤">
+    <label>使用デバイス</label>
+    <select id="setupDevice">
+      <option value="pc">パソコン</option>
+      <option value="sp">スマホ</option>
+    </select>
+    <button class="btn-start" onclick="completeSetup()">はじめる</button>
+  </div>
+</div>
+
+<header>
+  <h1>&#128694; ココイク</h1>
+  <p>福祉施設 利用者さまの個別外出を素敵に計画</p>
+</header>
+
+<div class="container">
+
+  <!-- Basic Info -->
+  <div class="section">
+    <div class="section-title">&#128205; 基本情報</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>計画担当者</label>
+        <input type="text" id="planner" placeholder="例：佐藤">
+      </div>
+      <div class="field">
+        <label>利用者名</label>
+        <input type="text" id="userName" placeholder="例：山田 太郎 さん">
+      </div>
+      <div class="field full">
+        <label>外出日時（出発）</label>
+        <div class="datetime-row">
+          <input type="date" id="eventDate">
+          <select id="eventHour"></select>
+          <span>:</span>
+          <select id="eventMin"></select>
+        </div>
+      </div>
+      <div class="field full">
+        <label>帰着予定時刻</label>
+        <div class="datetime-row">
+          <select id="returnHour"></select>
+          <span>:</span>
+          <select id="returnMin"></select>
+        </div>
+      </div>
+
+      <!-- Departure Location -->
+      <div class="field full">
+        <label>出発場所</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="departFrom" value="genki" id="departGenki" checked onchange="toggleDepartAddress()">
+            元気の家（岡山県倉敷市徳芳501-1）
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="departFrom" value="other" id="departOther" onchange="toggleDepartAddress()">
+            その他の場所
+          </label>
+        </div>
+        <input type="text" id="departAddress" placeholder="出発場所の住所を入力してください" style="display:none;margin-top:8px;">
+      </div>
+
+      <!-- Destination -->
+      <div class="field full"><label>外出先</label><input type="text" id="destination" placeholder="例：倉敷美観地区、後楽園、イオンモール倉敷"></div>
+      <div class="field full"><label>外出先の住所</label><input type="text" id="destAddress" placeholder="例：岡山県倉敷市中央1-4-8"></div>
+
+      <!-- Travel Time -->
+      <div class="field full">
+        <label>片道所要時間 <span style="font-weight:400;font-size:.75rem;color:var(--text-light);">※出発時刻の混雑状況を考慮してAIが推定します</span></label>
+        <div class="travel-row">
+          <input type="text" id="travelTime" placeholder="「計算」ボタンで自動推定">
+          <button class="btn-calc" id="btnCalcTravel" onclick="calculateTravelTime()">
+            <span class="spinner" id="spin_travel"></span>計算
+          </button>
+        </div>
+      </div>
+
+      <div class="field full"><label>外出目的</label><input type="text" id="purpose" placeholder="例：季節の花見、買い物、外食、散歩、墓参り"></div>
+      <div class="field full"><label>参加家族</label><input type="text" id="family" placeholder="例：奥様（花子さん）、長男（一郎さん）"></div>
+      <div class="field full"><label>同行スタッフ</label><input type="text" id="staff" placeholder="例：佐藤、鈴木、田中"></div>
+      <div class="field"><label>費用</label><input type="text" id="cost" placeholder="例：3,000円（昼食代含む）"></div>
+      <div class="field"><label>送迎車と運転手</label><input type="text" id="transport" placeholder="例：施設バス（運転手：高橋）"></div>
+      <div class="field full"><label>準備物</label><textarea id="items" rows="2" placeholder="例：飲み物、おやつ、着替え、タオル、雨具、常備薬、車いす"></textarea></div>
+      <div class="field"><label>SNS公開</label>
+        <select id="snsOk">
+          <option value="OK">OK</option>
+          <option value="NG">NG</option>
+          <option value="要確認">要確認</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Destination Info Section -->
+  <div class="section">
+    <div class="section-title">&#127757; 目的地情報</div>
+    <p style="font-size:.85rem;color:var(--text-light);margin-bottom:14px;">
+      外出先を入力してボタンを押すと、目的地の情報や写真をインターネットから自動取得します。<br>
+      取得した情報は計画書に添付されます。
+    </p>
+    <div class="ai-field" id="field_destinfo">
+      <div class="ai-btn-row">
+        <button class="btn-ai" onclick="fetchDestInfo()">
+          <span class="spinner" id="spin_destinfo"></span>目的地情報を取得
+        </button>
+        <button class="btn-revert" onclick="clearDestInfo()" id="btn_destinfo_clear" style="display:none;">クリア</button>
+      </div>
+      <div class="ai-result" id="result_destinfo">
+        <span class="result-label">AI作成</span>
+        <textarea class="result-text" id="destinfo_text"></textarea>
+        <div class="ai-btn-row">
+          <button class="btn-ai-sub" onclick="retryDestInfo('accessible')">バリアフリー情報を詳しく</button>
+          <button class="btn-ai-sub" onclick="retryDestInfo('practical')">実用情報を詳しく</button>
+          <button class="btn-ai-sub" onclick="retryDestInfo('shorter')">もっと短く</button>
+        </div>
+      </div>
+      <div id="dest_photos_area" style="display:none;margin-top:12px;">
+        <div style="font-size:.85rem;font-weight:600;color:#555;margin-bottom:8px;">&#128247; 目的地の写真（Wikipediaより引用）</div>
+        <div class="dest-photos-grid" id="dest_photos_grid"></div>
+      </div>
+    </div>
+
+    <!-- Route Map -->
+    <div class="ai-field" id="field_route">
+      <label>ルートマップ <span style="font-weight:400;font-size:.75rem;color:var(--text-light);">※出発地から目的地までのルートを地図上に表示します</span></label>
+      <div class="ai-btn-row">
+        <button class="btn-ai" onclick="generateRouteMap()">
+          <span class="spinner" id="spin_route"></span>ルートマップを作成
+        </button>
+        <button class="btn-revert" onclick="clearRouteMap()" id="btn_route_clear" style="display:none;">クリア</button>
+      </div>
+      <div class="route-map-wrap" id="routeMapWrap">
+        <span class="result-label">ルートマップ</span>
+        <div id="routeMap"></div>
+        <div class="route-info" id="routeInfo" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Section -->
+  <div class="section">
+    <div class="section-title">&#9998; AI文章作成セクション</div>
+    <p style="font-size:.85rem;color:var(--text-light);margin-bottom:18px;">
+      下書きを入力し「AIで洗練」ボタンを押すと、より丁寧で具体的な文章に仕上げます。<br>
+      気に入るまで何度でもやり直せます。「元に戻す」で入力した下書きに戻れます。<br>
+      AI作成後の文章は直接編集もできます。
+    </p>
+
+    <!-- Schedule -->
+    <div class="ai-field" id="field_schedule">
+      <label>当日の流れ <span style="font-weight:400;font-size:.75rem;color:var(--text-light);">※時間の記入がない場合は、AIで洗練をすると適当に組みます</span></label>
+      <textarea id="draft_schedule" placeholder="例：10時出発。10時半に公園到着。散歩・花見。11時半に近くのレストランで昼食。13時に施設へ戻る。"></textarea>
+      <div class="ai-btn-row">
+        <button class="btn-ai" onclick="refineField('schedule')"><span class="spinner" id="spin_schedule"></span>AIで洗練</button>
+      </div>
+      <div class="ai-result" id="result_schedule">
+        <span class="result-label">AI作成</span>
+        <textarea class="result-text"></textarea>
+        <div class="ai-btn-row">
+          <button class="btn-ai-sub" onclick="retryField('schedule','shorter')">もっと短く</button>
+          <button class="btn-ai-sub" onclick="retryField('schedule','different')">別の表現で</button>
+          <button class="btn-ai-sub" onclick="retryField('schedule','detailed')">もう少し詳しく</button>
+          <button class="btn-revert" onclick="revertField('schedule')">元に戻す</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-field" id="field_reason">
+      <label>この外出にした理由</label>
+      <textarea id="draft_reason" placeholder="例：太郎さんは自然が好き。桜の季節なので、近くの公園でお花見を楽しんでいただきたい。"></textarea>
+      <div class="ai-btn-row">
+        <button class="btn-ai" onclick="refineField('reason')"><span class="spinner" id="spin_reason"></span>AIで洗練</button>
+      </div>
+      <div class="ai-result" id="result_reason">
+        <span class="result-label">AI作成</span>
+        <textarea class="result-text"></textarea>
+        <div class="ai-btn-row">
+          <button class="btn-ai-sub" onclick="retryField('reason','shorter')">もっと短く</button>
+          <button class="btn-ai-sub" onclick="retryField('reason','different')">別の表現で</button>
+          <button class="btn-ai-sub" onclick="retryField('reason','detailed')">もう少し詳しく</button>
+          <button class="btn-revert" onclick="revertField('reason')">元に戻す</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-field" id="field_goal">
+      <label>ゴールのイメージ <span style="font-weight:400;font-size:.75rem;color:var(--text-light);">※業務プログラミング作成時のものをコピペでもOK</span></label>
+      <textarea id="draft_goal" placeholder="例：太郎さんが外の空気を楽しみ、笑顔で過ごせること。季節を感じる体験。"></textarea>
+      <div class="ai-btn-row">
+        <button class="btn-ai" onclick="refineField('goal')"><span class="spinner" id="spin_goal"></span>AIで洗練</button>
+      </div>
+      <div class="ai-result" id="result_goal">
+        <span class="result-label">AI作成</span>
+        <textarea class="result-text"></textarea>
+        <div class="ai-btn-row">
+          <button class="btn-ai-sub" onclick="retryField('goal','shorter')">もっと短く</button>
+          <button class="btn-ai-sub" onclick="retryField('goal','different')">別の表現で</button>
+          <button class="btn-ai-sub" onclick="retryField('goal','detailed')">もう少し詳しく</button>
+          <button class="btn-revert" onclick="revertField('goal')">元に戻す</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-field" id="field_caution">
+      <label>注意すべき点とその対処方法</label>
+      <textarea id="draft_caution" placeholder="例：太郎さんは車いす利用→外出先のバリアフリー確認済み。食事はきざみ食→レストランに事前連絡。暑さに弱い→こまめな水分補給と日陰で休憩。"></textarea>
+      <div class="ai-btn-row">
+        <button class="btn-ai" onclick="refineField('caution')"><span class="spinner" id="spin_caution"></span>AIで洗練</button>
+      </div>
+      <div class="ai-result" id="result_caution">
+        <span class="result-label">AI作成</span>
+        <textarea class="result-text"></textarea>
+        <div class="ai-btn-row">
+          <button class="btn-ai-sub" onclick="retryField('caution','shorter')">もっと短く</button>
+          <button class="btn-ai-sub" onclick="retryField('caution','different')">別の表現で</button>
+          <button class="btn-ai-sub" onclick="retryField('caution','detailed')">もう少し詳しく</button>
+          <button class="btn-revert" onclick="revertField('caution')">元に戻す</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Subtitle -->
+    <div class="ai-field" id="field_subtitle">
+      <label>外出サブタイトル <span style="font-weight:400;font-size:.75rem;color:var(--text-light);">※全項目の内容をもとにAIがキャッチーなタイトルを提案します</span></label>
+      <input type="hidden" id="draft_subtitle" value="">
+      <div class="ai-btn-row">
+        <button class="btn-ai" onclick="generateSubtitle()">
+          <span class="spinner" id="spin_subtitle"></span>AIでサブタイトルを提案
+        </button>
+      </div>
+      <div class="ai-result" id="result_subtitle">
+        <span class="result-label">AI作成</span>
+        <textarea class="result-text" style="min-height:36px;text-align:center;font-size:1.05rem;font-weight:700;"></textarea>
+        <div class="ai-btn-row" style="justify-content:center;">
+          <button class="btn-ai-sub" onclick="retrySubtitle('shorter')">もっと短く</button>
+          <button class="btn-ai-sub" onclick="retrySubtitle('different')">別の表現で</button>
+          <button class="btn-ai-sub" onclick="retrySubtitle('catchy')">もっとキャッチーに</button>
+          <button class="btn-revert" onclick="clearSubtitle()">クリア</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Illustration (DALL-E 3) -->
+    <div class="ai-field" id="field_illust">
+      <label>イメージイラスト <span style="font-weight:400;font-size:.75rem;color:var(--text-light);">※DALL-E 3で高品質アニメ調イラストを生成します</span><br><span style="font-weight:400;font-size:.75rem;color:#e05040;">※イラスト生成はコストがかかるため、1つの計画につき3回までとしてください</span></label>
+      <textarea id="illust_detail" rows="2" style="min-height:50px;" placeholder="（任意）よりリアルにしたい場合：利用者さんの見た目の特徴、外出先の雰囲気、季節の風景など"></textarea>
+      <div class="ai-btn-row">
+        <button class="btn-ai" onclick="generateIllust()">
+          <span class="spinner" id="spin_illust"></span>AIでイラスト生成
+        </button>
+        <button class="btn-ai-sub" onclick="generateIllust()" style="display:none;" id="btn_illust_retry">別のイラストで</button>
+        <button class="btn-revert" onclick="clearIllust()" style="display:none;" id="btn_illust_clear">クリア</button>
+      </div>
+      <div class="illust-area" id="illust_area">
+        <span class="result-label">AI作成</span>
+        <div id="illust_preview"></div>
+      </div>
+    </div>
+
+    <button class="btn-ai btn-ai-all" onclick="refineAll()">
+      <span class="spinner" id="spin_all"></span>
+      すべてをまとめてAIで洗練
+    </button>
+  </div>
+
+  <!-- Actions -->
+  <div class="section">
+    <div class="actions">
+      <button class="btn btn-preview" onclick="showPreview()">計画書をプレビュー</button>
+      <button class="btn btn-print" onclick="printDoc()">印刷 / PDF保存</button>
+      <button class="btn btn-clear" onclick="clearAll()">リセット</button>
+    </div>
+  </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header no-print">
+      <h2>計画書プレビュー</h2>
+      <button class="modal-close" onclick="document.getElementById('modalOverlay').classList.remove('show')">&times;</button>
+    </div>
+    <div class="modal-body" id="previewBody"></div>
+    <div class="modal-actions no-print">
+      <button class="btn btn-copy-doc" onclick="copyDoc()">計画書をコピー</button>
+      <button class="btn btn-print" onclick="printDoc()">印刷 / PDF保存</button>
+      <button class="btn btn-clear" onclick="document.getElementById('modalOverlay').classList.remove('show')">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// API Keys (obfuscated)
+const _j = a => a.map(s => s.split('').reverse().join('')).join('');
+const DEFAULT_API_KEY = _j(['ipa-tna-ks','J3BSGXg-30','7oEF3ImRzO','1E1zVNkds-','oJLq7Dw5GV','q5LimVR2Dz','N0iCuTwRIH','wLhQnMfCsT','_OQJtmg75E','-wAsExoNCg','AAAdhHJW']);
+const OPENAI_API_KEY = _j(['Um-jorp-ks','XFFU9wCMxs','0dS18_I768','PsF4gY7Fyo','wu2DS9_LO_','PupfYtGYSi','kVJWd_SmXK','hHYNatVZVf','JFkblB3T-s','x6WgkV4y9u','MVAJ4pVyPT','D_63YRk_l1','-njwWK66nN','vS-CfD9G6e','qCb4IAo_HS','HcTNKHcZGm','AQqV']);
+
+const GENKI_ADDRESS = '岡山県倉敷市徳芳501-1';
+
+// ── Setup ──
+function completeSetup() {
+  const name = document.getElementById('setupPlanner').value.trim();
+  if (!name) { alert('担当者名を入力してください'); return; }
+  const device = document.getElementById('setupDevice').value;
+  localStorage.setItem('outing_planner', name);
+  localStorage.setItem('outing_device', device);
+  document.getElementById('planner').value = name;
+  applyDevice(device);
+  document.getElementById('setupOverlay').classList.add('hidden');
+}
+function applyDevice(device) {
+  document.body.classList.toggle('sp-mode', device === 'sp');
+}
+(function checkSetup() {
+  const p = localStorage.getItem('outing_planner');
+  const d = localStorage.getItem('outing_device');
+  if (p) { document.getElementById('setupOverlay').classList.add('hidden'); }
+  if (p) document.getElementById('setupPlanner').value = p;
+  if (d) { document.getElementById('setupDevice').value = d; applyDevice(d); }
+})();
+
+// ── Departure Location Toggle ──
+function toggleDepartAddress() {
+  const isOther = document.getElementById('departOther').checked;
+  document.getElementById('departAddress').style.display = isOther ? 'block' : 'none';
+  localStorage.setItem('outing_departFrom', isOther ? 'other' : 'genki');
+}
+function getDepartureAddress() {
+  const isOther = document.getElementById('departOther').checked;
+  return isOther ? document.getElementById('departAddress').value.trim() : GENKI_ADDRESS;
+}
+
+// ── Time Pickers ──
+(function() {
+  ['eventHour','returnHour'].forEach(id => {
+    const h = document.getElementById(id);
+    for (let i = 0; i < 24; i++) { const o = new Option(String(i).padStart(2,'0'), String(i).padStart(2,'0')); h.add(o); }
+  });
+  ['eventMin','returnMin'].forEach(id => {
+    const m = document.getElementById(id);
+    [0,15,30,45].forEach(v => { const o = new Option(String(v).padStart(2,'0'), String(v).padStart(2,'0')); m.add(o); });
+  });
+  document.getElementById('eventHour').value = '10';
+  document.getElementById('eventMin').value = '00';
+  document.getElementById('returnHour').value = '15';
+  document.getElementById('returnMin').value = '00';
+})();
+
+// ── Auto-resize ──
+function autoResize(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
+
+// ── Persistence ──
+const FIELDS = [
+  'planner','userName','eventDate','eventHour','eventMin','returnHour','returnMin',
+  'destination','destAddress','purpose','family','staff','cost','transport',
+  'items','snsOk','travelTime','departAddress',
+  'draft_schedule','draft_reason','draft_goal','draft_caution'
+];
+const AI_KEYS = ['schedule','reason','goal','caution'];
+const aiResults = {};
+const originalDrafts = {};
+let destPhotos = JSON.parse(localStorage.getItem('outing_dest_photos') || '[]');
+let routeMapImage = localStorage.getItem('outing_route_image') || '';
+let routeDataStored = JSON.parse(localStorage.getItem('outing_route_data') || 'null');
+let routeMapInstance = null;
+let illustSvg = localStorage.getItem('outing_illust_svg') || '';
+let illustCount = parseInt(localStorage.getItem('outing_illust_count') || '0', 10);
+const ILLUST_MAX = 3;
+
+window.addEventListener('DOMContentLoaded', () => {
+  FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const saved = localStorage.getItem('outing_' + id);
+    if (saved !== null) el.value = saved;
+    el.addEventListener('input', () => localStorage.setItem('outing_' + id, el.value));
+    el.addEventListener('change', () => localStorage.setItem('outing_' + id, el.value));
+  });
+  const sp = localStorage.getItem('outing_planner');
+  if (sp && !document.getElementById('planner').value) document.getElementById('planner').value = sp;
+  document.getElementById('planner').addEventListener('input', () => {
+    localStorage.setItem('outing_planner', document.getElementById('planner').value);
+  });
+
+  // Restore departure radio
+  const savedDepart = localStorage.getItem('outing_departFrom');
+  if (savedDepart === 'other') {
+    document.getElementById('departOther').checked = true;
+    document.getElementById('departAddress').style.display = 'block';
+  }
+
+  AI_KEYS.forEach(key => {
+    const saved = localStorage.getItem('outing_ai_' + key);
+    const savedOrig = localStorage.getItem('outing_orig_' + key);
+    if (savedOrig) originalDrafts[key] = savedOrig;
+    if (saved) {
+      aiResults[key] = saved;
+      const box = document.getElementById('result_' + key);
+      const ta = box.querySelector('.result-text');
+      ta.value = cleanMarkdown(saved);
+      box.classList.add('show');
+      setTimeout(() => autoResize(ta), 0);
+    }
+    const ta = document.getElementById('result_' + key).querySelector('.result-text');
+    ta.addEventListener('input', () => {
+      aiResults[key] = ta.value;
+      localStorage.setItem('outing_ai_' + key, ta.value);
+      autoResize(ta);
+    });
+  });
+
+  // Restore subtitle
+  const savedSub = localStorage.getItem('outing_ai_subtitle');
+  if (savedSub) {
+    aiResults['subtitle'] = savedSub;
+    const subBox = document.getElementById('result_subtitle');
+    const subTa = subBox.querySelector('.result-text');
+    subTa.value = cleanMarkdown(savedSub).trim();
+    subBox.classList.add('show');
+    setTimeout(() => autoResize(subTa), 0);
+  }
+  const subTa = document.getElementById('result_subtitle').querySelector('.result-text');
+  subTa.addEventListener('input', () => {
+    aiResults['subtitle'] = subTa.value;
+    localStorage.setItem('outing_ai_subtitle', subTa.value);
+    autoResize(subTa);
+  });
+
+  // Restore destination info
+  const savedDestInfo = localStorage.getItem('outing_ai_destinfo');
+  if (savedDestInfo) {
+    aiResults['destinfo'] = savedDestInfo;
+    const diBox = document.getElementById('result_destinfo');
+    const diTa = document.getElementById('destinfo_text');
+    diTa.value = cleanMarkdown(savedDestInfo);
+    diBox.classList.add('show');
+    document.getElementById('btn_destinfo_clear').style.display = 'inline-flex';
+    setTimeout(() => autoResize(diTa), 0);
+  }
+  document.getElementById('destinfo_text').addEventListener('input', () => {
+    aiResults['destinfo'] = document.getElementById('destinfo_text').value;
+    localStorage.setItem('outing_ai_destinfo', document.getElementById('destinfo_text').value);
+    autoResize(document.getElementById('destinfo_text'));
+  });
+
+  // Restore destination photos
+  if (destPhotos.length > 0) {
+    renderDestPhotos(destPhotos);
+  }
+
+  // Restore route map
+  if (routeMapImage) {
+    document.getElementById('routeMapWrap').classList.add('show');
+    document.getElementById('btn_route_clear').style.display = 'inline-flex';
+    if (routeDataStored) {
+      restoreRouteMap(routeDataStored);
+    }
+  }
+
+  // Restore illust
+  if (illustSvg) {
+    document.getElementById('illust_preview').innerHTML = `<img src="${illustSvg}" alt="外出イメージ">`;
+    document.getElementById('illust_area').classList.add('show');
+    document.getElementById('btn_illust_retry').style.display = 'inline-flex';
+    document.getElementById('btn_illust_clear').style.display = 'inline-flex';
+  }
+  const savedDetail = localStorage.getItem('outing_illust_detail');
+  if (savedDetail) document.getElementById('illust_detail').value = savedDetail;
+  document.getElementById('illust_detail').addEventListener('input', () => {
+    localStorage.setItem('outing_illust_detail', document.getElementById('illust_detail').value);
+  });
+});
+
+// ── Toast ──
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── Claude API ──
+async function callClaude(systemPrompt, messages, maxTokens) {
+  const apiKey = localStorage.getItem('outingPlan_apiKey') || DEFAULT_API_KEY;
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens || 1024,
+      system: systemPrompt,
+      messages: messages
+    })
+  });
+  if (!res.ok) { console.error(await res.text()); toast('APIエラーが発生しました。'); throw new Error('API error'); }
+  const data = await res.json();
+  return data.content[0].text;
+}
+
+// ══════════════════════════════════════
+// ── Travel Time Calculation ──
+// ══════════════════════════════════════
+async function calculateTravelTime() {
+  const departAddr = getDepartureAddress();
+  const destAddr = getVal('destAddress');
+  const dest = getVal('destination');
+  const departHour = getVal('eventHour');
+  const departMin = getVal('eventMin');
+
+  if (!destAddr && !dest) { toast('外出先または外出先の住所を入力してください'); return; }
+  if (document.getElementById('departOther').checked && !departAddr) {
+    toast('出発場所の住所を入力してください'); return;
+  }
+
+  const btn = document.getElementById('btnCalcTravel');
+  const spinner = document.getElementById('spin_travel');
+  btn.disabled = true; spinner.style.display = 'inline-block';
+
+  const destInfo = destAddr ? `${dest}（${destAddr}）` : dest;
+  const timeStr = `${departHour}:${departMin}`;
+
+  try {
+    const result = await callClaude(
+      `あなたは日本の道路交通、特に岡山県周辺の道路事情に詳しいナビゲーション専門家です。
+2つの地点間の車での片道所要時間を推定してください。
+
+以下を考慮して推定してください：
+・一般道路での移動を基本とする（ただし明らかに遠距離の場合は高速道路利用も併記）
+・出発時刻による交通量の違い（朝7-9時は通勤ラッシュ、夕方17-19時は帰宅ラッシュで渋滞しやすい）
+・岡山県の主要道路の混雑傾向（国道2号線、国道429号線など）
+・信号待ちや右左折の時間も考慮した実用的な所要時間
+
+回答形式：
+「約XX分（一般道）」のように簡潔に回答してください。
+渋滞が予想される時間帯の場合は「約XX分〜XX分（一般道・渋滞考慮）」の形式にしてください。
+高速道路利用が現実的な距離の場合は、改行して「高速利用の場合：約XX分」も併記してください。
+所要時間の情報のみを出力し、他の説明は不要です。`,
+      [{ role: 'user', content: `【出発地】${departAddr}\n【目的地】${destInfo}\n【出発時刻】${timeStr}` }],
+      300
+    );
+    document.getElementById('travelTime').value = cleanMarkdown(result).trim();
+    localStorage.setItem('outing_travelTime', document.getElementById('travelTime').value);
+    toast('所要時間を推定しました');
+  } catch (e) {
+    toast('所要時間の推定に失敗しました');
+  } finally {
+    btn.disabled = false; spinner.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════
+// ── Destination Info (Claude + Wikipedia) ──
+// ══════════════════════════════════════
+async function fetchDestInfo() {
+  const dest = getVal('destination');
+  const destAddr = getVal('destAddress');
+  if (!dest && !destAddr) { toast('外出先を入力してください'); return; }
+
+  const spinner = document.getElementById('spin_destinfo');
+  const btns = document.getElementById('field_destinfo').querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+  spinner.style.display = 'inline-block';
+
+  // Claude: destination info
+  try {
+    const destQuery = dest + (destAddr ? `（${destAddr}）` : '');
+    const result = await callClaude(
+      `あなたは岡山県周辺の観光地・施設・公園などに詳しい地域情報の専門家です。
+以下の目的地について、福祉施設の利用者さん（高齢者・障がい者）が外出する際に役立つ情報をまとめてください。
+
+以下の項目を含めてください：
+・施設/場所の概要（2〜3文で簡潔に）
+・見どころ・楽しみ方
+・バリアフリー情報（車いす対応、多目的トイレ、段差の有無など、わかる範囲で）
+・駐車場情報
+・営業時間・定休日（わかる範囲で）
+・周辺の食事処やトイレの情報
+・季節ごとの特徴（該当する場合）
+・注意点やアドバイス
+
+Markdownの記号（**、#、-など）は一切使わず、プレーンテキストで出力してください。
+箇条書きには「・」を使ってください。項目名は【 】で囲んでください。
+正確にわからない情報は「要確認」と記載し、憶測で書かないでください。`,
+      [{ role: 'user', content: `目的地：${destQuery}` }],
+      1500
+    );
+    aiResults['destinfo'] = result;
+    localStorage.setItem('outing_ai_destinfo', result);
+    const diBox = document.getElementById('result_destinfo');
+    const diTa = document.getElementById('destinfo_text');
+    diTa.value = cleanMarkdown(result);
+    diBox.classList.add('show');
+    document.getElementById('btn_destinfo_clear').style.display = 'inline-flex';
+    setTimeout(() => autoResize(diTa), 0);
+    toast('目的地情報を取得しました');
+  } catch (e) {
+    toast('目的地情報の取得に失敗しました');
+  }
+
+  // Wikipedia: photos
+  try {
+    const photos = await fetchWikipediaPhotos(dest);
+    if (photos.length > 0) {
+      destPhotos = photos;
+      localStorage.setItem('outing_dest_photos', JSON.stringify(photos));
+      renderDestPhotos(photos);
+    }
+  } catch (e) {
+    console.log('Wikipedia photos not found:', e);
+  }
+
+  btns.forEach(b => b.disabled = false);
+  spinner.style.display = 'none';
+}
+
+async function retryDestInfo(mode) {
+  const current = aiResults['destinfo'];
+  if (!current) return;
+  const dest = getVal('destination');
+  const destAddr = getVal('destAddress');
+  const destQuery = dest + (destAddr ? `（${destAddr}）` : '');
+
+  const instructions = {
+    accessible: '前回の情報に加えて、バリアフリー情報（車いすでのアクセス、スロープ、エレベーター、多目的トイレ、障がい者用駐車場など）をより詳しく記載してください。',
+    practical: '前回の情報に加えて、実用的な情報（最寄りのコンビニ・薬局、近くの病院、休憩できるベンチの有無、雨天時の代替案など）をより詳しく記載してください。',
+    shorter: '前回の情報をもっと短く簡潔にまとめ直してください。最も重要な情報に絞ってください。'
+  };
+
+  const spinner = document.getElementById('spin_destinfo');
+  const btns = document.getElementById('field_destinfo').querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+  spinner.style.display = 'inline-block';
+
+  try {
+    const result = await callClaude(
+      `あなたは岡山県周辺の観光地・施設に詳しい地域情報の専門家です。
+福祉施設の利用者さん（高齢者・障がい者）の外出に役立つ情報をまとめてください。
+Markdownの記号は使わず、プレーンテキストで出力してください。箇条書きには「・」、項目名は【 】を使ってください。
+正確にわからない情報は「要確認」と記載してください。`,
+      [
+        { role: 'user', content: `目的地：${destQuery}` },
+        { role: 'assistant', content: current },
+        { role: 'user', content: instructions[mode] }
+      ],
+      1500
+    );
+    aiResults['destinfo'] = result;
+    localStorage.setItem('outing_ai_destinfo', result);
+    document.getElementById('destinfo_text').value = cleanMarkdown(result);
+    setTimeout(() => autoResize(document.getElementById('destinfo_text')), 0);
+    toast('目的地情報を更新しました');
+  } catch (e) {} finally {
+    btns.forEach(b => b.disabled = false);
+    spinner.style.display = 'none';
+  }
+}
+
+function clearDestInfo() {
+  aiResults['destinfo'] = '';
+  localStorage.removeItem('outing_ai_destinfo');
+  localStorage.removeItem('outing_dest_photos');
+  destPhotos = [];
+  document.getElementById('result_destinfo').classList.remove('show');
+  document.getElementById('destinfo_text').value = '';
+  document.getElementById('btn_destinfo_clear').style.display = 'none';
+  document.getElementById('dest_photos_area').style.display = 'none';
+  document.getElementById('dest_photos_grid').innerHTML = '';
+  toast('目的地情報をクリアしました');
+}
+
+// ══════════════════════════════════════
+// ── Route Map (Leaflet + OSRM) ──
+// ══════════════════════════════════════
+async function geocodeAddress(address, label) {
+  // Try multiple query variations for better hit rate
+  const queries = buildGeoQueries(address);
+  for (const q of queries) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=jp&accept-language=ja`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'ja' } });
+      const data = await res.json();
+      if (data.length) {
+        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+      }
+    } catch(e) { /* try next */ }
+  }
+  // Final fallback: use Claude to get approximate coordinates
+  try {
+    const result = await callClaude(
+      '日本の住所または施設名から緯度・経度を推定してください。JSON形式 {"lat":数値,"lng":数値} のみを出力してください。他のテキストは不要です。',
+      [{ role: 'user', content: address }], 100
+    );
+    const match = result.match(/\{\s*"lat"\s*:\s*([\d.]+)\s*,\s*"lng"\s*:\s*([\d.]+)\s*\}/);
+    if (match) {
+      return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), display: address };
+    }
+  } catch(e) { /* fallback failed */ }
+  throw new Error(`住所が見つかりません: ${label || address}`);
+}
+
+function buildGeoQueries(address) {
+  const queries = [];
+  const cleaned = address.replace(/[\s　]+/g, '').replace(/[（(][^）)]*[）)]/g, '');
+  // 1. Original
+  queries.push(address);
+  // 2. Cleaned
+  if (cleaned !== address) queries.push(cleaned);
+  // 3. Remove building/floor details (番地以降を簡略化)
+  const simplified = cleaned
+    .replace(/[0-9０-９]+(階|F|号室|号).*$/, '')
+    .replace(/[\-ー－][0-9０-９]+[\-ー－][0-9０-９]+$/, (m) => m.split(/[\-ー－]/)[0] + m.split(/[\-ー－]/)[1]);
+  if (simplified !== cleaned) queries.push(simplified);
+  // 4. Prefecture + city + major area only (市区町村まで)
+  const cityMatch = cleaned.match(/^(.+?[都道府県])(.+?[市区町村郡])/);
+  if (cityMatch) {
+    // Include everything up to the town/area level
+    const afterCity = cleaned.slice(cityMatch[0].length);
+    const townMatch = afterCity.match(/^(.+?[町村丁目])/);
+    if (townMatch) queries.push(cityMatch[0] + townMatch[1]);
+    queries.push(cityMatch[0]);
+  }
+  // 5. Space-separated for structured search
+  const structured = cleaned.replace(/([都道府県])/, '$1 ').replace(/([市区町村郡])/, '$1 ');
+  if (structured !== cleaned) queries.push(structured);
+  // Deduplicate
+  return [...new Set(queries)];
+}
+
+function decodePolyline(encoded) {
+  // Decode OSRM polyline (precision 5)
+  const coords = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let b, shift = 0, result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    coords.push([lat / 1e5, lng / 1e5]);
+  }
+  return coords;
+}
+
+async function generateRouteMap() {
+  const departAddr = getDepartureAddress();
+  const destAddr = getVal('destAddress') || getVal('destination');
+
+  if (!destAddr) { toast('外出先または外出先の住所を入力してください'); return; }
+  if (document.getElementById('departOther').checked && !departAddr) {
+    toast('出発場所の住所を入力してください'); return;
+  }
+
+  const spinner = document.getElementById('spin_route');
+  const btns = document.getElementById('field_route').querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+  spinner.style.display = 'inline-block';
+
+  try {
+    toast('住所を検索中...');
+    // Geocode both addresses (try name+address combo for destination)
+    const destName = getVal('destination');
+    const destSearch = destAddr
+      ? destAddr
+      : destName;
+    const destSearchAlt = (destAddr && destName) ? destName + ' ' + destAddr : null;
+
+    let departGeo, destGeo;
+    departGeo = await geocodeAddress(departAddr, '出発場所');
+    try {
+      destGeo = await geocodeAddress(destSearch, '目的地');
+    } catch(e) {
+      // Retry with alternative query
+      if (destSearchAlt) {
+        destGeo = await geocodeAddress(destSearchAlt, '目的地');
+      } else {
+        throw e;
+      }
+    }
+
+    toast('ルートを計算中...');
+    // Get route from OSRM
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${departGeo.lng},${departGeo.lat};${destGeo.lng},${destGeo.lat}?overview=full&geometries=polyline`;
+    const osrmRes = await fetch(osrmUrl);
+    const osrmData = await osrmRes.json();
+
+    if (!osrmData.routes || !osrmData.routes.length) throw new Error('ルートが見つかりません');
+
+    const route = osrmData.routes[0];
+    const routeCoords = decodePolyline(route.geometry);
+    const distanceKm = (route.distance / 1000).toFixed(1);
+    const durationMin = Math.round(route.duration / 60);
+
+    const routeData = {
+      departCoords: [departGeo.lat, departGeo.lng],
+      destCoords: [destGeo.lat, destGeo.lng],
+      routeCoords: routeCoords,
+      departName: document.getElementById('departOther').checked ? getVal('departAddress') : '元気の家',
+      destName: getVal('destination') || getVal('destAddress'),
+      distanceKm: distanceKm,
+      durationMin: durationMin
+    };
+
+    // Display map
+    displayRouteMap(routeData);
+
+    // Store
+    routeDataStored = routeData;
+    localStorage.setItem('outing_route_data', JSON.stringify(routeData));
+
+    // Show info
+    const infoDiv = document.getElementById('routeInfo');
+    infoDiv.innerHTML = `
+      <strong>出発:</strong> ${escapeHtml(routeData.departName)}<br>
+      <strong>目的地:</strong> ${escapeHtml(routeData.destName)}<br>
+      <strong>距離:</strong> 約 ${distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${durationMin} 分（道路状況により変動）`;
+    infoDiv.style.display = 'block';
+
+    // Capture map image after tiles fully load
+    await waitForTilesAndCapture();
+
+    toast('ルートマップを作成しました');
+  } catch (e) {
+    console.error('Route map error:', e);
+    toast('ルートマップの作成に失敗しました: ' + e.message);
+  } finally {
+    btns.forEach(b => b.disabled = false);
+    spinner.style.display = 'none';
+  }
+}
+
+function displayRouteMap(routeData) {
+  const wrap = document.getElementById('routeMapWrap');
+  wrap.classList.add('show');
+  document.getElementById('btn_route_clear').style.display = 'inline-flex';
+
+  // Destroy existing map
+  if (routeMapInstance) {
+    routeMapInstance.remove();
+    routeMapInstance = null;
+  }
+
+  // Create map
+  const map = L.map('routeMap', { zoomControl: true });
+  routeMapInstance = map;
+
+  // Add tile layer with CORS support for capture
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    crossOrigin: 'anonymous',
+    maxZoom: 18
+  }).addTo(map);
+
+  // Add route polyline
+  const routeLine = L.polyline(routeData.routeCoords, {
+    color: '#2a7363', weight: 5, opacity: 0.8
+  }).addTo(map);
+
+  // Custom icons
+  const departIcon = L.divIcon({
+    html: '<div style="background:#e05040;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);">出</div>',
+    iconSize: [30, 30], iconAnchor: [15, 15], className: ''
+  });
+  const destIcon = L.divIcon({
+    html: '<div style="background:#3a8f7c;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);">着</div>',
+    iconSize: [30, 30], iconAnchor: [15, 15], className: ''
+  });
+
+  // Add markers
+  L.marker(routeData.departCoords, { icon: departIcon })
+    .addTo(map).bindPopup(`<b>出発:</b> ${routeData.departName}`);
+  L.marker(routeData.destCoords, { icon: destIcon })
+    .addTo(map).bindPopup(`<b>目的地:</b> ${routeData.destName}`);
+
+  // Fit map to route bounds with padding
+  map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+}
+
+function restoreRouteMap(routeData) {
+  // Small delay to ensure DOM is ready
+  setTimeout(() => {
+    displayRouteMap(routeData);
+    const infoDiv = document.getElementById('routeInfo');
+    infoDiv.innerHTML = `
+      <strong>出発:</strong> ${escapeHtml(routeData.departName)}<br>
+      <strong>目的地:</strong> ${escapeHtml(routeData.destName)}<br>
+      <strong>距離:</strong> 約 ${routeData.distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${routeData.durationMin} 分（道路状況により変動）`;
+    infoDiv.style.display = 'block';
+    // Re-capture image after tiles load
+    waitForTilesAndCapture();
+  }, 300);
+}
+
+function waitForTilesAndCapture() {
+  return new Promise((resolve) => {
+    if (!routeMapInstance) { resolve(); return; }
+    const container = routeMapInstance.getContainer();
+
+    // Wait until all visible tiles are loaded
+    let attempts = 0;
+    const maxAttempts = 30;
+    const check = () => {
+      attempts++;
+      const tiles = container.querySelectorAll('img.leaflet-tile');
+      const allLoaded = Array.from(tiles).every(t => t.complete && t.naturalWidth > 0);
+      if (allLoaded || attempts >= maxAttempts) {
+        // Extra delay for rendering to settle
+        setTimeout(async () => {
+          await captureMapImage();
+          resolve();
+        }, 500);
+      } else {
+        setTimeout(check, 300);
+      }
+    };
+    // Start checking after initial render
+    setTimeout(check, 500);
+  });
+}
+
+async function captureMapImage() {
+  if (!routeMapInstance) return;
+  const container = routeMapInstance.getContainer();
+  const size = routeMapInstance.getSize();
+
+  // Method 1: Canvas capture with CORS tiles
+  let captured = false;
+  try {
+    const canvas = document.createElement('canvas');
+    const scale = 2;
+    canvas.width = size.x * scale;
+    canvas.height = size.y * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+
+    // White background
+    ctx.fillStyle = '#e8e8e8';
+    ctx.fillRect(0, 0, size.x, size.y);
+
+    // Draw tiles
+    const containerRect = container.getBoundingClientRect();
+    const tileContainers = container.querySelectorAll('.leaflet-tile-container');
+    let tilesDrawn = 0;
+    for (const tc of tileContainers) {
+      const tiles = tc.querySelectorAll('img.leaflet-tile');
+      for (const tile of tiles) {
+        if (tile.complete && tile.naturalWidth > 0) {
+          const r = tile.getBoundingClientRect();
+          ctx.drawImage(tile, r.left - containerRect.left, r.top - containerRect.top, r.width, r.height);
+          tilesDrawn++;
+        }
+      }
+    }
+
+    // Draw route polyline (SVG overlay)
+    const svgEl = container.querySelector('.leaflet-overlay-pane svg');
+    if (svgEl) {
+      const svgClone = svgEl.cloneNode(true);
+      svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      const svgStr = new XMLSerializer().serializeToString(svgClone);
+      const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl = URL.createObjectURL(svgBlob);
+      try {
+        const svgImg = await new Promise((res, rej) => {
+          const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = svgUrl;
+        });
+        const sr = svgEl.getBoundingClientRect();
+        ctx.drawImage(svgImg, sr.left - containerRect.left, sr.top - containerRect.top, sr.width, sr.height);
+      } catch(e) {}
+      URL.revokeObjectURL(svgUrl);
+    }
+
+    // Draw markers (div icons)
+    const markers = container.querySelectorAll('.leaflet-marker-pane .leaflet-marker-icon');
+    for (const marker of markers) {
+      const mr = marker.getBoundingClientRect();
+      const inner = marker.querySelector('div');
+      if (inner) {
+        const cx = mr.left - containerRect.left + mr.width / 2;
+        const cy = mr.top - containerRect.top + mr.height / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 15, 0, Math.PI * 2);
+        ctx.fillStyle = inner.style.background || inner.style.backgroundColor || '#3a8f7c';
+        ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(inner.textContent.trim(), cx, cy);
+      }
+    }
+
+    // Attribution
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(0, size.y - 20, size.x, 20);
+    ctx.fillStyle = '#555'; ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('\u00A9 OpenStreetMap contributors | Route: OSRM', 4, size.y - 4);
+
+    // Test if canvas is not tainted
+    const dataUrl = canvas.toDataURL('image/png', 0.92);
+    if (tilesDrawn > 0 && dataUrl.length > 1000) {
+      routeMapImage = dataUrl;
+      try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
+      captured = true;
+    }
+  } catch(e) {
+    console.log('Canvas capture failed:', e);
+  }
+
+  // Method 2: Fallback - render route on a fresh canvas using own tile fetching
+  if (!captured && routeDataStored) {
+    try {
+      const dataUrl = await renderStaticRouteMap(routeDataStored);
+      if (dataUrl) {
+        routeMapImage = dataUrl;
+        try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
+        captured = true;
+      }
+    } catch(e) { console.log('Static render fallback failed:', e); }
+  }
+
+  // Method 3: Last resort - generate a simple SVG map
+  if (!captured && routeDataStored) {
+    routeMapImage = generateSvgRouteMap(routeDataStored);
+    try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
+  }
+}
+
+// Fallback: Fetch tiles directly with CORS and render on canvas
+async function renderStaticRouteMap(rd) {
+  const W = 700, H = 400;
+  const canvas = document.createElement('canvas');
+  canvas.width = W * 2; canvas.height = H * 2;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+
+  // Calculate bounds
+  const allLats = rd.routeCoords.map(c => c[0]);
+  const allLngs = rd.routeCoords.map(c => c[1]);
+  const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
+  const minLng = Math.min(...allLngs), maxLng = Math.max(...allLngs);
+  const padLat = (maxLat - minLat) * 0.15 || 0.01;
+  const padLng = (maxLng - minLng) * 0.15 || 0.01;
+
+  // Determine zoom level and tile coordinates
+  const centerLat = (minLat + maxLat) / 2;
+  const centerLng = (minLng + maxLng) / 2;
+  let zoom = 14;
+  for (let z = 16; z >= 5; z--) {
+    const n = Math.pow(2, z);
+    const latRange = 360 / n;
+    const lngRange = 360 / n;
+    if ((maxLat - minLat + padLat * 2) < latRange * (H / 256) && (maxLng - minLng + padLng * 2) < lngRange * (W / 256)) {
+      zoom = z; break;
+    }
+  }
+
+  // Tile math
+  const n = Math.pow(2, zoom);
+  function lngToTileX(lng) { return (lng + 180) / 360 * n; }
+  function latToTileY(lat) { return (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n; }
+  function lngToPixel(lng) { return (lngToTileX(lng) - lngToTileX(centerLng)) * 256 + W / 2; }
+  function latToPixel(lat) { return (latToTileY(lat) - latToTileY(centerLat)) * 256 + H / 2; }
+
+  // Fetch tiles
+  const centerTileX = Math.floor(lngToTileX(centerLng));
+  const centerTileY = Math.floor(latToTileY(centerLat));
+  const tilesX = Math.ceil(W / 256) + 2;
+  const tilesY = Math.ceil(H / 256) + 2;
+
+  ctx.fillStyle = '#e8e8e8';
+  ctx.fillRect(0, 0, W, H);
+
+  const tilePromises = [];
+  for (let dx = -Math.floor(tilesX / 2); dx <= Math.floor(tilesX / 2); dx++) {
+    for (let dy = -Math.floor(tilesY / 2); dy <= Math.floor(tilesY / 2); dy++) {
+      const tx = centerTileX + dx;
+      const ty = centerTileY + dy;
+      if (tx < 0 || ty < 0 || tx >= n || ty >= n) continue;
+      const url = `https://tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`;
+      tilePromises.push(
+        new Promise(resolve => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const px = (tx - lngToTileX(centerLng)) * 256 + W / 2;
+            const py = (ty - latToTileY(centerLat)) * 256 + H / 2;
+            ctx.drawImage(img, px, py, 256, 256);
+            resolve(true);
+          };
+          img.onerror = () => resolve(false);
+          img.src = url;
+        })
+      );
+    }
+  }
+
+  const results = await Promise.all(tilePromises);
+  if (!results.some(r => r)) return null; // All tiles failed
+
+  // Draw route
+  ctx.beginPath();
+  ctx.strokeStyle = '#2a7363';
+  ctx.lineWidth = 4;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  rd.routeCoords.forEach((c, i) => {
+    const x = lngToPixel(c[1]), y = latToPixel(c[0]);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Draw markers
+  function drawMarker(lat, lng, color, label) {
+    const x = lngToPixel(lng), y = latToPixel(lat);
+    ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, x, y);
+  }
+  drawMarker(rd.departCoords[0], rd.departCoords[1], '#e05040', '出');
+  drawMarker(rd.destCoords[0], rd.destCoords[1], '#3a8f7c', '着');
+
+  // Attribution
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillRect(0, H - 18, W, 18);
+  ctx.fillStyle = '#555'; ctx.font = '9px sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText('\u00A9 OpenStreetMap contributors | Route: OSRM', 4, H - 3);
+
+  return canvas.toDataURL('image/png', 0.9);
+}
+
+// Last resort: Simple SVG route diagram
+function generateSvgRouteMap(rd) {
+  const W = 700, H = 400, PAD = 40;
+  const allLats = rd.routeCoords.map(c => c[0]);
+  const allLngs = rd.routeCoords.map(c => c[1]);
+  const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
+  const minLng = Math.min(...allLngs), maxLng = Math.max(...allLngs);
+  const rangeLat = maxLat - minLat || 0.01;
+  const rangeLng = maxLng - minLng || 0.01;
+
+  function toX(lng) { return PAD + (lng - minLng) / rangeLng * (W - PAD * 2); }
+  function toY(lat) { return H - PAD - (lat - minLat) / rangeLat * (H - PAD * 2); }
+
+  const points = rd.routeCoords.map(c => `${toX(c[1]).toFixed(1)},${toY(c[0]).toFixed(1)}`).join(' ');
+  const dx = toX(rd.departCoords[1]), dy = toY(rd.departCoords[0]);
+  const ax = toX(rd.destCoords[1]), ay = toY(rd.destCoords[0]);
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <rect width="${W}" height="${H}" fill="#eef4ee" rx="8"/>
+    <polyline points="${points}" fill="none" stroke="#2a7363" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${dx}" cy="${dy}" r="14" fill="#e05040" stroke="#fff" stroke-width="2.5"/>
+    <text x="${dx}" y="${dy + 1}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="13" font-weight="bold">出</text>
+    <circle cx="${ax}" cy="${ay}" r="14" fill="#3a8f7c" stroke="#fff" stroke-width="2.5"/>
+    <text x="${ax}" y="${ay + 1}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="13" font-weight="bold">着</text>
+    <text x="${dx}" y="${dy - 22}" text-anchor="middle" fill="#c0392b" font-size="11" font-weight="bold">${rd.departName}</text>
+    <text x="${ax}" y="${ay - 22}" text-anchor="middle" fill="#2a7363" font-size="11" font-weight="bold">${rd.destName}</text>
+    <text x="${W / 2}" y="${H - 6}" text-anchor="middle" fill="#999" font-size="9">\u00A9 OpenStreetMap contributors | Route: OSRM | 約${rd.distanceKm}km</text>
+  </svg>`;
+
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+}
+
+function clearRouteMap() {
+  if (routeMapInstance) { routeMapInstance.remove(); routeMapInstance = null; }
+  routeMapImage = ''; routeDataStored = null;
+  localStorage.removeItem('outing_route_image');
+  localStorage.removeItem('outing_route_data');
+  document.getElementById('routeMapWrap').classList.remove('show');
+  document.getElementById('routeInfo').style.display = 'none';
+  document.getElementById('btn_route_clear').style.display = 'none';
+  toast('ルートマップをクリアしました');
+}
+
+// ── Wikipedia API for Photos ──
+async function fetchWikipediaPhotos(query) {
+  if (!query) return [];
+  const photos = [];
+
+  // Step 1: Search Wikipedia for the destination
+  const searchUrl = `https://ja.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=3&prop=pageimages|info&piprop=original|thumbnail&pithumbsize=600&format=json&origin=*`;
+  const searchRes = await fetch(searchUrl);
+  const searchData = await searchRes.json();
+
+  if (!searchData.query || !searchData.query.pages) return [];
+
+  const pages = searchData.query.pages;
+  const pageIds = Object.keys(pages).sort((a, b) => (pages[a].index || 0) - (pages[b].index || 0));
+
+  // Collect main page images
+  for (const pid of pageIds) {
+    const page = pages[pid];
+    if (page.original && page.original.source) {
+      photos.push({
+        url: page.thumbnail ? page.thumbnail.source : page.original.source,
+        originalUrl: page.original.source,
+        title: page.title,
+        pageUrl: `https://ja.wikipedia.org/wiki/${encodeURIComponent(page.title)}`,
+        source: 'Wikipedia'
+      });
+    }
+  }
+
+  // Step 2: Get more images from the first result page
+  if (pageIds.length > 0) {
+    const firstPage = pages[pageIds[0]];
+    try {
+      const imagesUrl = `https://ja.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(firstPage.title)}&prop=images&imlimit=20&format=json&origin=*`;
+      const imagesRes = await fetch(imagesUrl);
+      const imagesData = await imagesRes.json();
+      const imPages = imagesData.query.pages;
+      const imPageId = Object.keys(imPages)[0];
+      const images = imPages[imPageId].images || [];
+
+      // Filter for photos only
+      const photoImages = images.filter(img =>
+        /\.(jpg|jpeg|png)$/i.test(img.title) &&
+        !/(icon|logo|flag|symbol|map|commons-logo|wiki|disambig|edit|lock|question|stub|folder|arrow|button)/i.test(img.title)
+      ).slice(0, 6);
+
+      // Get URLs for each image
+      for (const img of photoImages) {
+        if (photos.length >= 6) break;
+        // Skip if already have this image
+        if (photos.some(p => p.title === img.title.replace(/^(ファイル|File):/, ''))) continue;
+
+        try {
+          const infoUrl = `https://ja.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(img.title)}&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=600&format=json&origin=*`;
+          const infoRes = await fetch(infoUrl);
+          const infoData = await infoRes.json();
+          const infoPages = infoData.query.pages;
+          const infoPageId = Object.keys(infoPages)[0];
+          const imageInfo = infoPages[infoPageId].imageinfo;
+          if (imageInfo && imageInfo[0]) {
+            const meta = imageInfo[0].extmetadata || {};
+            photos.push({
+              url: imageInfo[0].thumburl || imageInfo[0].url,
+              originalUrl: imageInfo[0].url,
+              title: (meta.ObjectName && meta.ObjectName.value) || img.title.replace(/^(ファイル|File):/, '').replace(/\.[^.]+$/, ''),
+              pageUrl: imageInfo[0].descriptionurl || `https://ja.wikipedia.org/wiki/${encodeURIComponent(firstPage.title)}`,
+              source: 'Wikipedia',
+              author: meta.Artist ? meta.Artist.value.replace(/<[^>]*>/g, '') : ''
+            });
+          }
+        } catch (e) { /* skip failed image */ }
+      }
+    } catch (e) { /* skip images listing */ }
+  }
+
+  return photos.slice(0, 6);
+}
+
+function renderDestPhotos(photos) {
+  if (!photos || photos.length === 0) return;
+  const grid = document.getElementById('dest_photos_grid');
+  grid.innerHTML = '';
+  photos.forEach(photo => {
+    const card = document.createElement('div');
+    card.className = 'dest-photo-card';
+    card.innerHTML = `
+      <img src="${photo.url}" alt="${photo.title}" onerror="this.parentElement.style.display='none'">
+      <div class="photo-caption">
+        ${photo.title}<br>
+        <a href="${photo.pageUrl}" target="_blank" rel="noopener">出典: ${photo.source}</a>
+        ${photo.author ? ' / ' + photo.author : ''}
+      </div>`;
+    grid.appendChild(card);
+  });
+  document.getElementById('dest_photos_area').style.display = 'block';
+}
+
+// ══════════════════════════════════════
+// ── AI Text Refinement ──
+// ══════════════════════════════════════
+const LABELS = {
+  schedule: '当日の流れ',
+  reason: 'この外出にした理由',
+  goal: 'ゴールのイメージ',
+  caution: '注意すべき点とその対処方法'
+};
+
+const PROMPTS = {
+  schedule: `あなたは福祉施設の個別外出計画書を作成する専門家です。
+以下の「当日の流れ」の下書きを、時系列が明確で読みやすい計画書向けの文章に洗練してください。
+箇条書きの時刻付きタイムスケジュール形式で、温かみのある表現にしてください。
+外出ならではの移動・休憩・トイレなどのポイントも適宜含めてください。
+下書きの内容を尊重し、大幅な追加はせず、表現を整えることに集中してください。
+Markdownの記号（**、#、-など）は一切使わず、プレーンテキストで出力してください。箇条書きには「・」を使ってください。
+冒頭に項目名の見出し（例：【当日の流れ】など）は含めず、本文のみを出力してください。`,
+
+  reason: `あなたは福祉施設の個別外出計画書を作成する専門家です。
+以下の「この外出にした理由」の下書きを、利用者様への想いが伝わる丁寧な文章に洗練してください。
+ご本人の好みや希望、季節感、生活の質の向上などの観点を大切にした理由が明確に伝わるようにしてください。
+下書きの内容を尊重し、大幅な追加はせず、表現を整えることに集中してください。
+Markdownの記号（**、#、-など）は一切使わず、プレーンテキストで出力してください。箇条書きには「・」を使ってください。
+冒頭に項目名の見出し（例：【この外出にした理由】など）は含めず、本文のみを出力してください。`,
+
+  goal: `あなたは福祉施設の個別外出計画書を作成する専門家です。
+以下の「ゴールのイメージ」の下書きを、具体的で温かみのある目標文に洗練してください。
+利用者様にとっての体験価値や、ご家族・スタッフにとっての成功像が明確に伝わるようにしてください。
+下書きの内容を尊重し、大幅な追加はせず、表現を整えることに集中してください。
+Markdownの記号（**、#、-など）は一切使わず、プレーンテキストで出力してください。箇条書きには「・」を使ってください。
+冒頭に項目名の見出し（例：【ゴールのイメージ】など）は含めず、本文のみを出力してください。`,
+
+  caution: `あなたは福祉施設の個別外出計画書を作成する専門家です。
+以下の「注意すべき点とその対処方法」の下書きを、スタッフ全員が確認しやすい明確な注意事項と具体的な対処方法に洗練してください。
+外出時ならではのリスク（移動中の安全、天候変化、体調変化、トイレ、食事形態、バリアフリーなど）を考慮してください。
+注意点ごとに対処方法をセットで記載し、安全面・体調面・環境面に配慮した具体的な表現にしてください。
+下書きの内容を尊重し、大幅な追加はせず、表現を整えることに集中してください。
+Markdownの記号（**、#、-など）は一切使わず、プレーンテキストで出力してください。箇条書きには「・」を使ってください。
+冒頭に項目名の見出し（例：【注意すべき点】など）は含めず、本文のみを出力してください。`
+};
+
+const RETRY_INSTRUCTIONS = {
+  shorter: '前回の文章をもっと短く簡潔にまとめ直してください。要点を絞り、冗長な表現を省いてください。',
+  different: '前回の文章を別の表現・言い回しで書き直してください。意味は同じで、違った切り口や語彙を使ってください。',
+  detailed: '前回の文章をもう少し詳しく、具体的に膨らませてください。ただし大幅に長くしすぎないようにしてください。',
+  catchy: '前回のタイトルをもっとキャッチーで、ワクワク感があふれるものに変えてください。思わず「おっ！」と言いたくなるタイトルをお願いします。タイトルのみ出力してください。'
+};
+
+function setLoading(key, loading) {
+  const spinner = document.getElementById('spin_' + key);
+  const btns = document.getElementById('field_' + key).querySelectorAll('button');
+  btns.forEach(b => b.disabled = loading);
+  if (spinner) spinner.style.display = loading ? 'inline-block' : 'none';
+}
+
+async function refineField(key) {
+  const draft = document.getElementById('draft_' + key).value;
+  if (!draft.trim()) { toast('下書きを入力してください'); return; }
+  originalDrafts[key] = draft;
+  localStorage.setItem('outing_orig_' + key, draft);
+
+  const userName = document.getElementById('userName').value.trim();
+  const destination = document.getElementById('destination').value.trim();
+  const context = (userName ? `\n\n【利用者名】${userName}` : '') + (destination ? `\n【外出先】${destination}` : '');
+
+  setLoading(key, true);
+  try {
+    const result = await callClaude(PROMPTS[key], [
+      { role: 'user', content: `【下書き】\n${draft}${context}` }
+    ]);
+    aiResults[key] = result;
+    localStorage.setItem('outing_ai_' + key, result);
+    const box = document.getElementById('result_' + key);
+    const ta = box.querySelector('.result-text');
+    ta.value = cleanMarkdown(result);
+    box.classList.add('show');
+    setTimeout(() => autoResize(ta), 0);
+    toast(`「${LABELS[key]}」を洗練しました`);
+  } catch (e) {} finally { setLoading(key, false); }
+}
+
+async function retryField(key, mode) {
+  const currentResult = aiResults[key];
+  if (!currentResult) return;
+  const draft = originalDrafts[key] || document.getElementById('draft_' + key).value;
+  const userName = document.getElementById('userName').value.trim();
+  const destination = document.getElementById('destination').value.trim();
+  const context = (userName ? `\n\n【利用者名】${userName}` : '') + (destination ? `\n【外出先】${destination}` : '');
+
+  setLoading(key, true);
+  try {
+    const result = await callClaude(PROMPTS[key], [
+      { role: 'user', content: `【下書き】\n${draft}${context}` },
+      { role: 'assistant', content: currentResult },
+      { role: 'user', content: RETRY_INSTRUCTIONS[mode] }
+    ]);
+    aiResults[key] = result;
+    localStorage.setItem('outing_ai_' + key, result);
+    const box = document.getElementById('result_' + key);
+    const ta = box.querySelector('.result-text');
+    ta.value = cleanMarkdown(result);
+    setTimeout(() => autoResize(ta), 0);
+    toast(`「${LABELS[key]}」を再作成しました`);
+  } catch (e) {} finally { setLoading(key, false); }
+}
+
+function revertField(key) {
+  aiResults[key] = '';
+  localStorage.removeItem('outing_ai_' + key);
+  document.getElementById('result_' + key).classList.remove('show');
+  if (originalDrafts[key]) {
+    document.getElementById('draft_' + key).value = originalDrafts[key];
+    localStorage.setItem('outing_draft_' + key, originalDrafts[key]);
+  }
+  toast('元の下書きに戻しました');
+}
+
+// ── Illustration (DALL-E 3) ──
+async function generateIllust() {
+  if (illustCount >= ILLUST_MAX) {
+    toast(`イラスト生成は${ILLUST_MAX}回までです（現在${illustCount}回使用済み）`);
+    return;
+  }
+  const openaiKey = OPENAI_API_KEY;
+  const spinner = document.getElementById('spin_illust');
+  const btns = document.getElementById('field_illust').querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+  spinner.style.display = 'inline-block';
+
+  const preview = document.getElementById('illust_preview');
+  const area = document.getElementById('illust_area');
+  area.classList.add('show');
+  preview.innerHTML = '<p style="color:var(--text-light);font-size:.9rem;padding:20px 0;">DALL-E 3でイラストを生成中...（30〜60秒ほどお待ちください）</p>';
+
+  const context = gatherAllContext();
+  const subtitle = cleanMarkdown(aiResults['subtitle']) || '';
+  const detail = (document.getElementById('illust_detail') || {}).value || '';
+  const dateStr = formatDepartureDate();
+
+  let imagePrompt = '';
+  try {
+    const promptGen = `You are an expert at writing DALL-E image generation prompts.
+Create a single English prompt for generating a beautiful anime-style illustration of this outing/excursion from a care facility.
+
+Outing plan info:
+${context}
+Subtitle: ${subtitle}
+Date: ${dateStr}
+${detail ? 'Visual details (HIGHEST PRIORITY): ' + detail : ''}
+
+Rules:
+- Beautiful Japanese anime art style, warm and heartfelt
+- Depict the actual outing scene: the destination, scenery, activities
+- Show the elderly person enjoying the outing, accompanied by care staff and/or family
+- Reflect the season from the date (cherry blossoms for spring, autumn leaves for fall, etc.)
+- Include the destination and activities mentioned
+- Warm natural lighting, everyone smiling, feeling of freedom and joy
+- Output ONLY the prompt, under 300 words
+- End with: no text, no words, no letters, no watermark`;
+
+    imagePrompt = await callClaude(promptGen, [
+      { role: 'user', content: 'Generate the DALL-E prompt.' }
+    ], 500);
+  } catch (e) {
+    const dest = getVal('destination') || 'a beautiful park';
+    imagePrompt = `Beautiful Japanese anime style illustration of a warm outing from a care facility to ${dest}. An elderly person enjoys the outdoors, accompanied by friendly care staff. Beautiful natural scenery, seasonal flowers and trees, blue sky with gentle clouds. The elderly person looks happy and relaxed. Warm natural lighting, peaceful atmosphere, feeling of freedom and joy. Studio Ghibli inspired, detailed background, soft cel shading. ${detail || ''}. no text, no words, no letters, no watermark`;
+  }
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + openaiKey
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt: imagePrompt.trim().substring(0, 4000),
+        n: 1,
+        size: '1792x1024',
+        quality: 'standard',
+        response_format: 'b64_json'
+      })
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error?.message || res.status);
+    }
+    const data = await res.json();
+    const b64 = data.data[0].b64_json;
+    const dataUrl = 'data:image/png;base64,' + b64;
+
+    illustSvg = dataUrl;
+    try { localStorage.setItem('outing_illust_svg', dataUrl); } catch(e) {}
+    preview.innerHTML = `<img src="${dataUrl}" alt="外出イメージ">`;
+    document.getElementById('btn_illust_retry').style.display = 'inline-flex';
+    document.getElementById('btn_illust_clear').style.display = 'inline-flex';
+    illustCount++;
+    localStorage.setItem('outing_illust_count', String(illustCount));
+    toast(`イラストを生成しました（残り${ILLUST_MAX - illustCount}回）`);
+  } catch (e) {
+    console.error('DALL-E error:', e);
+    preview.innerHTML = `<p style="color:#e05040;font-size:.9rem;padding:10px 0;">エラー: ${e.message}</p>`;
+    document.getElementById('btn_illust_retry').style.display = 'inline-flex';
+    document.getElementById('btn_illust_clear').style.display = 'inline-flex';
+  } finally {
+    btns.forEach(b => b.disabled = false);
+    spinner.style.display = 'none';
+  }
+}
+
+function clearIllust() {
+  illustSvg = ''; localStorage.removeItem('outing_illust_svg');
+  document.getElementById('illust_preview').innerHTML = '';
+  document.getElementById('illust_area').classList.remove('show');
+  document.getElementById('btn_illust_retry').style.display = 'none';
+  document.getElementById('btn_illust_clear').style.display = 'none';
+  toast('イラストをクリアしました');
+}
+
+// ── Subtitle ──
+function gatherAllContext() {
+  const name = getVal('userName') || '';
+  const dest = getVal('destination') || '';
+  const destAddr = getVal('destAddress') || '';
+  const purpose = getVal('purpose') || '';
+  const family = getVal('family') || '';
+  const schedule = cleanMarkdown(aiResults['schedule'] || getVal('draft_schedule')) || '';
+  const reason = cleanMarkdown(aiResults['reason'] || getVal('draft_reason')) || '';
+  const goal = cleanMarkdown(aiResults['goal'] || getVal('draft_goal')) || '';
+  const caution = cleanMarkdown(aiResults['caution'] || getVal('draft_caution')) || '';
+  return `【利用者名】${name}
+【外出先】${dest}${destAddr ? '（' + destAddr + '）' : ''}
+【外出目的】${purpose}
+【参加家族】${family}
+【当日の流れ】${schedule}
+【この外出にした理由】${reason}
+【ゴールのイメージ】${goal}
+【注意すべき点】${caution}`;
+}
+
+const SUBTITLE_SYSTEM = `あなたは福祉施設の個別外出計画のキャッチコピーを考える天才コピーライターです。
+以下の外出計画の全情報を読み取り、この外出の魅力を凝縮した、スタッフや家族の心をぐっと掴むサブタイトルを1つだけ考えてください。
+短く（15文字〜30文字程度）、温かくて楽しい雰囲気が伝わるものにしてください。
+利用者さんの個性や外出先の魅力、季節感が反映された、この外出ならではのタイトルにしてください。
+「〜」や「！」を効果的に使い、読んだ人がワクワクするタイトルにしてください。
+タイトルのみを出力し、他の説明は不要です。`;
+
+async function generateSubtitle() {
+  const context = gatherAllContext();
+  setLoading('subtitle', true);
+  try {
+    const result = await callClaude(SUBTITLE_SYSTEM, [
+      { role: 'user', content: context }
+    ], 200);
+    aiResults['subtitle'] = result;
+    localStorage.setItem('outing_ai_subtitle', result);
+    const box = document.getElementById('result_subtitle');
+    const ta = box.querySelector('.result-text');
+    ta.value = cleanMarkdown(result).trim();
+    box.classList.add('show');
+    setTimeout(() => autoResize(ta), 0);
+    toast('サブタイトルを提案しました');
+  } catch (e) {} finally { setLoading('subtitle', false); }
+}
+
+async function retrySubtitle(mode) {
+  const current = aiResults['subtitle'];
+  if (!current) return;
+  const context = gatherAllContext();
+  setLoading('subtitle', true);
+  try {
+    const result = await callClaude(SUBTITLE_SYSTEM, [
+      { role: 'user', content: context },
+      { role: 'assistant', content: current },
+      { role: 'user', content: RETRY_INSTRUCTIONS[mode] }
+    ], 200);
+    aiResults['subtitle'] = result;
+    localStorage.setItem('outing_ai_subtitle', result);
+    const box = document.getElementById('result_subtitle');
+    const ta = box.querySelector('.result-text');
+    ta.value = cleanMarkdown(result).trim();
+    setTimeout(() => autoResize(ta), 0);
+    toast('サブタイトルを再作成しました');
+  } catch (e) {} finally { setLoading('subtitle', false); }
+}
+
+function clearSubtitle() {
+  aiResults['subtitle'] = '';
+  localStorage.removeItem('outing_ai_subtitle');
+  document.getElementById('result_subtitle').classList.remove('show');
+  toast('サブタイトルをクリアしました');
+}
+
+async function refineAll() {
+  const btn = document.querySelector('#spin_all').parentElement;
+  const spinner = document.getElementById('spin_all');
+  btn.disabled = true; spinner.style.display = 'inline-block';
+  // Travel time
+  if ((getVal('destination') || getVal('destAddress')) && !getVal('travelTime')) {
+    try { await calculateTravelTime(); } catch(e) {}
+  }
+  // Destination info
+  if ((getVal('destination') || getVal('destAddress')) && !aiResults['destinfo']) {
+    try { await fetchDestInfo(); } catch(e) {}
+  }
+  // Route map
+  if ((getVal('destination') || getVal('destAddress')) && !routeMapImage) {
+    try { await generateRouteMap(); } catch(e) {}
+  }
+  // AI fields
+  for (const key of ['schedule','reason','goal','caution']) {
+    const draft = document.getElementById('draft_' + key).value.trim();
+    if (draft) { try { await refineField(key); } catch(e) {} }
+  }
+  try { await generateSubtitle(); } catch(e) {}
+  try { await generateIllust(); } catch(e) {}
+  btn.disabled = false; spinner.style.display = 'none';
+  toast('すべての項目を洗練しました');
+}
+
+// ══════════════════════════════════════
+// ── Preview / Print ──
+// ══════════════════════════════════════
+function getVal(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function formatDepartureDate() {
+  const d = getVal('eventDate'), h = getVal('eventHour'), m = getVal('eventMin');
+  if (!d) return '';
+  const date = new Date(d + 'T' + h + ':' + m);
+  const weekDays = ['日','月','火','水','木','金','土'];
+  return `${date.getFullYear()}年${date.getMonth()+1}月${date.getDate()}日(${weekDays[date.getDay()]}) ${h}:${m}`;
+}
+function formatReturnTime() {
+  return `${getVal('returnHour')}:${getVal('returnMin')}`;
+}
+function escapeHtml(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
+function cleanMarkdown(text) {
+  if (!text) return text;
+  return text
+    .replace(/^#{1,6}\s+/gm, '').replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1').replace(/_(.+?)_/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1').replace(/`(.+?)`/g, '$1')
+    .replace(/^>\s?/gm, '').replace(/^[\-\*]\s+/gm, '・')
+    .replace(/^\d+\.\s+/gm, m => m.replace(/\./, '.'))
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/---+/g, '').replace(/\n{3,}/g, '\n\n');
+}
+
+function buildDoc() {
+  const name = getVal('userName') || '___';
+  const plannerName = getVal('planner') || '___';
+  const snsLabel = document.getElementById('snsOk').value;
+  const departLabel = document.getElementById('departOther').checked
+    ? getVal('departAddress') || '（未記入）'
+    : '元気の家（岡山県倉敷市徳芳501-1）';
+  const travelTimeVal = getVal('travelTime') || '（未計算）';
+
+  const aiText = (key) => {
+    let t = cleanMarkdown(aiResults[key] || getVal('draft_' + key)) || '（未記入）';
+    const headingLabels = ['当日の流れ','この外出にした理由','ゴールのイメージ','注意すべき点','対処方法','注意事項','利用者名','外出先','外出目的','目的地情報'];
+    t = t.replace(/^.*$/gm, function(line) {
+      const trimmed = line.replace(/[\s【】■▼▶●☆★〇◆◇「」：:]/g, '');
+      for (const l of headingLabels) {
+        if (trimmed === l || trimmed === l.replace(/\s/g,'')) return '';
+      }
+      return line;
+    });
+    t = t.replace(/^[\s]*利用者名[\s]*[:：].*$/gm, '');
+    t = t.replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
+    return t.trim();
+  };
+
+  const sub = cleanMarkdown(aiResults['subtitle'] || getVal('draft_subtitle')) || '';
+  const subHtml = sub ? `<div class="event-subtitle">${escapeHtml(sub)}</div>` : '';
+  const illustHtml = illustSvg ? `<div class="illust-print"><img src="${illustSvg}" alt="外出イメージ"></div>` : '';
+
+  const depTime = formatDepartureDate();
+  const retTime = formatReturnTime();
+  const timeDisplay = depTime ? `${depTime}　〜　${retTime} 帰着予定` : '';
+
+  // Destination info
+  const destInfoText = aiText('destinfo');
+  const destInfoHtml = (destInfoText && destInfoText !== '（未記入）')
+    ? `<div class="section-heading">目的地情報</div><div class="text-block">${escapeHtml(destInfoText)}</div>`
+    : '';
+
+  // Route map
+  let routeMapHtml = '';
+  if (routeMapImage) {
+    const info = routeDataStored
+      ? `${escapeHtml(routeDataStored.departName)} → ${escapeHtml(routeDataStored.destName)}（約 ${routeDataStored.distanceKm} km / 約 ${routeDataStored.durationMin} 分）`
+      : '';
+    routeMapHtml = `<div class="section-heading">ルートマップ</div>
+      <div class="route-map-print">
+        <img src="${routeMapImage}" alt="ルートマップ">
+        <div class="map-src">${info}<br>&copy; OpenStreetMap contributors | ルート: OSRM</div>
+      </div>`;
+  }
+
+  // Destination photos
+  let destPhotosHtml = '';
+  if (destPhotos.length > 0) {
+    const photoCards = destPhotos.map(p =>
+      `<div style="text-align:center;"><img src="${p.url}" alt="${escapeHtml(p.title)}" style="width:200px;height:140px;object-fit:cover;border-radius:6px;border:1px solid #ddd;"><div class="photo-src">出典: <a href="${p.pageUrl}" target="_blank">${escapeHtml(p.source)}</a></div></div>`
+    ).join('');
+    destPhotosHtml = `<div class="section-heading">目的地の写真</div><div class="dest-photos-print">${photoCards}</div>`;
+  }
+
+  return `
+<div class="print-doc">
+  <h2>${escapeHtml(name)} さん 個別外出計画書</h2>
+  ${subHtml}
+  <p class="subtitle">作成日：${new Date().toLocaleDateString('ja-JP')}　／　計画担当者：${escapeHtml(plannerName)}</p>
+  ${illustHtml}
+  <table>
+    <tr><th>利用者名</th><td>${escapeHtml(name)}</td><th>日時</th><td>${timeDisplay}</td></tr>
+    <tr><th>外出先</th><td>${escapeHtml(getVal('destination')||'（未記入）')}</td><th>外出目的</th><td>${escapeHtml(getVal('purpose')||'（未記入）')}</td></tr>
+    <tr><th>出発場所</th><td>${escapeHtml(departLabel)}</td><th>片道所要時間</th><td>${escapeHtml(travelTimeVal)}</td></tr>
+    <tr><th>同行スタッフ</th><td>${escapeHtml(getVal('staff')||'（未記入）')}</td><th>送迎車・運転手</th><td>${escapeHtml(getVal('transport')||'（未記入）')}</td></tr>
+    <tr><th>準備物</th><td>${escapeHtml(getVal('items')||'（未記入）')}</td><th>費用</th><td>${escapeHtml(getVal('cost')||'（未記入）')}</td></tr>
+    <tr><th>参加家族</th><td>${escapeHtml(getVal('family')||'（未記入）')}</td><th>SNS公開</th><td>${snsLabel}</td></tr>
+  </table>
+  <div class="section-heading">当日の流れ</div>
+  <div class="text-block">${escapeHtml(aiText('schedule'))}</div>
+  <div class="section-heading">この外出にした理由</div>
+  <div class="text-block">${escapeHtml(aiText('reason'))}</div>
+  <div class="section-heading">ゴールのイメージ</div>
+  <div class="text-block">${escapeHtml(aiText('goal'))}</div>
+  <div class="section-heading">注意すべき点とその対処方法</div>
+  <div class="text-block">${escapeHtml(aiText('caution'))}</div>
+  ${routeMapHtml}
+  ${destInfoHtml}
+  ${destPhotosHtml}
+</div>`;
+}
+
+function copyDoc() {
+  const text = document.getElementById('previewBody').innerText.replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n').trim();
+  navigator.clipboard.writeText(text).then(() => toast('計画書をコピーしました'));
+}
+function showPreview() {
+  document.getElementById('previewBody').innerHTML = buildDoc();
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function closeModal(e) { if (e.target === e.currentTarget) document.getElementById('modalOverlay').classList.remove('show'); }
+function printDoc() { showPreview(); setTimeout(() => window.print(), 300); }
+function clearAll() {
+  if (!confirm('すべての入力をリセットしますか？')) return;
+  FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = '';
+    localStorage.removeItem('outing_' + id);
+  });
+  AI_KEYS.forEach(key => {
+    aiResults[key] = ''; originalDrafts[key] = '';
+    localStorage.removeItem('outing_ai_' + key); localStorage.removeItem('outing_orig_' + key);
+    const box = document.getElementById('result_' + key);
+    box.classList.remove('show'); box.querySelector('.result-text').value = '';
+  });
+  // Clear subtitle
+  aiResults['subtitle'] = ''; localStorage.removeItem('outing_ai_subtitle');
+  const subBox = document.getElementById('result_subtitle');
+  subBox.classList.remove('show'); subBox.querySelector('.result-text').value = '';
+  // Clear dest info
+  aiResults['destinfo'] = ''; localStorage.removeItem('outing_ai_destinfo');
+  localStorage.removeItem('outing_dest_photos'); destPhotos = [];
+  document.getElementById('result_destinfo').classList.remove('show');
+  document.getElementById('destinfo_text').value = '';
+  document.getElementById('btn_destinfo_clear').style.display = 'none';
+  document.getElementById('dest_photos_area').style.display = 'none';
+  document.getElementById('dest_photos_grid').innerHTML = '';
+  // Clear route map
+  if (routeMapInstance) { routeMapInstance.remove(); routeMapInstance = null; }
+  routeMapImage = ''; routeDataStored = null;
+  localStorage.removeItem('outing_route_image'); localStorage.removeItem('outing_route_data');
+  document.getElementById('routeMapWrap').classList.remove('show');
+  document.getElementById('routeInfo').style.display = 'none';
+  document.getElementById('btn_route_clear').style.display = 'none';
+  // Clear illust
+  illustSvg = ''; illustCount = 0;
+  localStorage.removeItem('outing_illust_svg'); localStorage.removeItem('outing_illust_detail'); localStorage.removeItem('outing_illust_count');
+  if (document.getElementById('illust_detail')) document.getElementById('illust_detail').value = '';
+  document.getElementById('illust_preview').innerHTML = '';
+  document.getElementById('illust_area').classList.remove('show');
+  document.getElementById('btn_illust_retry').style.display = 'none';
+  document.getElementById('btn_illust_clear').style.display = 'none';
+  // Reset times & departure
+  document.getElementById('eventHour').value = '10';
+  document.getElementById('eventMin').value = '00';
+  document.getElementById('returnHour').value = '15';
+  document.getElementById('returnMin').value = '00';
+  document.getElementById('departGenki').checked = true;
+  document.getElementById('departAddress').style.display = 'none';
+  localStorage.removeItem('outing_departFrom');
+  const p = localStorage.getItem('outing_planner');
+  if (p) document.getElementById('planner').value = p;
+  toast('リセットしました');
+}
+</script>
+</body>
+</html>
