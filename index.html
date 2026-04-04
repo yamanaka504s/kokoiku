@@ -340,7 +340,7 @@
     position: absolute; top: -10px; left: 12px; background: var(--primary); color: #fff;
     font-size: .7rem; padding: 1px 10px; border-radius: 10px; font-weight: 600;
   }
-  #routeMap { height: 380px; border-radius: 8px; border: 1px solid var(--border); z-index: 1; }
+  .route-map-img { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--border); display: block; }
   .route-info {
     margin-top: 10px; font-size: .85rem; color: var(--text); line-height: 1.6;
     background: #fff; padding: 10px 14px; border-radius: 8px; border: 1px solid #c8e0d8;
@@ -354,10 +354,7 @@
   @media print {
     .print-doc .route-map-print img { width: 100%; max-width: 100%; }
   }
-  body.sp-mode #routeMap { height: 280px; }
 </style>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
 <body>
 
@@ -500,7 +497,7 @@
       </div>
       <div class="route-map-wrap" id="routeMapWrap">
         <span class="result-label">ルートマップ</span>
-        <div id="routeMap"></div>
+        <img id="routeMapImg" class="route-map-img" alt="ルートマップ">
         <div class="route-info" id="routeInfo" style="display:none;"></div>
       </div>
     </div>
@@ -733,7 +730,6 @@ const originalDrafts = {};
 let destPhotos = JSON.parse(localStorage.getItem('outing_dest_photos') || '[]');
 let routeMapImage = localStorage.getItem('outing_route_image') || '';
 let routeDataStored = JSON.parse(localStorage.getItem('outing_route_data') || 'null');
-let routeMapInstance = null;
 let illustSvg = localStorage.getItem('outing_illust_svg') || '';
 let illustCount = parseInt(localStorage.getItem('outing_illust_count') || '0', 10);
 const ILLUST_MAX = 3;
@@ -820,12 +816,14 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // Restore route map
-  if (routeMapImage) {
+  if (routeMapImage && routeDataStored) {
+    document.getElementById('routeMapImg').src = routeMapImage;
     document.getElementById('routeMapWrap').classList.add('show');
     document.getElementById('btn_route_clear').style.display = 'inline-flex';
-    if (routeDataStored) {
-      restoreRouteMap(routeDataStored);
-    }
+    const rd = routeDataStored;
+    const infoDiv = document.getElementById('routeInfo');
+    infoDiv.innerHTML = `<strong>出発:</strong> ${escapeHtml(rd.departName)}<br><strong>目的地:</strong> ${escapeHtml(rd.destName)}<br><strong>距離:</strong> 約 ${rd.distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${rd.durationMin} 分（道路状況により変動）`;
+    infoDiv.style.display = 'block';
   }
 
   // Restore illust
@@ -1044,10 +1042,9 @@ function clearDestInfo() {
 }
 
 // ══════════════════════════════════════
-// ── Route Map (Leaflet + OSRM) ──
+// ── Route Map (Static Image - PC/SP both) ──
 // ══════════════════════════════════════
 async function geocodeAddress(address, label) {
-  // Try multiple query variations for better hit rate
   const queries = buildGeoQueries(address);
   for (const q of queries) {
     try {
@@ -1059,50 +1056,42 @@ async function geocodeAddress(address, label) {
       }
     } catch(e) { /* try next */ }
   }
-  // Final fallback: use Claude to get approximate coordinates
+  // Fallback: Claude AI geocoding
   try {
     const result = await callClaude(
-      '日本の住所または施設名から緯度・経度を推定してください。JSON形式 {"lat":数値,"lng":数値} のみを出力してください。他のテキストは不要です。',
+      '日本の住所または施設���から緯度・経度を推定してください。JSON形式 {"lat":数値,"lng":数値} のみを出力してください。他のテキストは不要です。',
       [{ role: 'user', content: address }], 100
     );
-    const match = result.match(/\{\s*"lat"\s*:\s*([\d.]+)\s*,\s*"lng"\s*:\s*([\d.]+)\s*\}/);
+    const match = result.match(/\{\s*"lat"\s*:\s*([-\d.]+)\s*,\s*"lng"\s*:\s*([-\d.]+)\s*\}/);
     if (match) {
       return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), display: address };
     }
-  } catch(e) { /* fallback failed */ }
+  } catch(e) {}
   throw new Error(`住所が見つかりません: ${label || address}`);
 }
 
 function buildGeoQueries(address) {
   const queries = [];
   const cleaned = address.replace(/[\s　]+/g, '').replace(/[（(][^）)]*[）)]/g, '');
-  // 1. Original
   queries.push(address);
-  // 2. Cleaned
   if (cleaned !== address) queries.push(cleaned);
-  // 3. Remove building/floor details (番地以降を簡略化)
   const simplified = cleaned
     .replace(/[0-9０-９]+(階|F|号室|号).*$/, '')
     .replace(/[\-ー－][0-9０-９]+[\-ー－][0-9０-９]+$/, (m) => m.split(/[\-ー－]/)[0] + m.split(/[\-ー－]/)[1]);
   if (simplified !== cleaned) queries.push(simplified);
-  // 4. Prefecture + city + major area only (市区町村まで)
   const cityMatch = cleaned.match(/^(.+?[都道府県])(.+?[市区町村郡])/);
   if (cityMatch) {
-    // Include everything up to the town/area level
     const afterCity = cleaned.slice(cityMatch[0].length);
     const townMatch = afterCity.match(/^(.+?[町村丁目])/);
     if (townMatch) queries.push(cityMatch[0] + townMatch[1]);
     queries.push(cityMatch[0]);
   }
-  // 5. Space-separated for structured search
   const structured = cleaned.replace(/([都道府県])/, '$1 ').replace(/([市区町村郡])/, '$1 ');
   if (structured !== cleaned) queries.push(structured);
-  // Deduplicate
   return [...new Set(queries)];
 }
 
 function decodePolyline(encoded) {
-  // Decode OSRM polyline (precision 5)
   const coords = [];
   let index = 0, lat = 0, lng = 0;
   while (index < encoded.length) {
@@ -1133,11 +1122,8 @@ async function generateRouteMap() {
 
   try {
     toast('住所を検索中...');
-    // Geocode both addresses (try name+address combo for destination)
     const destName = getVal('destination');
-    const destSearch = destAddr
-      ? destAddr
-      : destName;
+    const destSearch = destAddr || destName;
     const destSearchAlt = (destAddr && destName) ? destName + ' ' + destAddr : null;
 
     let departGeo, destGeo;
@@ -1145,16 +1131,11 @@ async function generateRouteMap() {
     try {
       destGeo = await geocodeAddress(destSearch, '目的地');
     } catch(e) {
-      // Retry with alternative query
-      if (destSearchAlt) {
-        destGeo = await geocodeAddress(destSearchAlt, '目的地');
-      } else {
-        throw e;
-      }
+      if (destSearchAlt) destGeo = await geocodeAddress(destSearchAlt, '目的地');
+      else throw e;
     }
 
     toast('ルートを計算中...');
-    // Get route from OSRM
     const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${departGeo.lng},${departGeo.lat};${destGeo.lng},${destGeo.lat}?overview=full&geometries=polyline`;
     const osrmRes = await fetch(osrmUrl);
     const osrmData = await osrmRes.json();
@@ -1176,14 +1157,18 @@ async function generateRouteMap() {
       durationMin: durationMin
     };
 
-    // Display map
-    displayRouteMap(routeData);
-
-    // Store
+    toast('マップを描画中...');
+    // Render static map image directly (no Leaflet needed)
+    const dataUrl = await renderStaticRouteMap(routeData);
+    routeMapImage = dataUrl;
     routeDataStored = routeData;
-    localStorage.setItem('outing_route_data', JSON.stringify(routeData));
 
-    // Show info
+    // Display
+    const img = document.getElementById('routeMapImg');
+    img.src = routeMapImage;
+    document.getElementById('routeMapWrap').classList.add('show');
+    document.getElementById('btn_route_clear').style.display = 'inline-flex';
+
     const infoDiv = document.getElementById('routeInfo');
     infoDiv.innerHTML = `
       <strong>出発:</strong> ${escapeHtml(routeData.departName)}<br>
@@ -1191,8 +1176,9 @@ async function generateRouteMap() {
       <strong>距離:</strong> 約 ${distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${durationMin} 分（道路状況により変動）`;
     infoDiv.style.display = 'block';
 
-    // Capture map image after tiles fully load
-    await waitForTilesAndCapture();
+    // Save
+    localStorage.setItem('outing_route_data', JSON.stringify(routeData));
+    try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
 
     toast('ルートマップを作成しました');
   } catch (e) {
@@ -1204,347 +1190,161 @@ async function generateRouteMap() {
   }
 }
 
-function displayRouteMap(routeData) {
-  const wrap = document.getElementById('routeMapWrap');
-  wrap.classList.add('show');
-  document.getElementById('btn_route_clear').style.display = 'inline-flex';
-
-  // Destroy existing map
-  if (routeMapInstance) {
-    routeMapInstance.remove();
-    routeMapInstance = null;
-  }
-
-  // Create map
-  const map = L.map('routeMap', { zoomControl: true });
-  routeMapInstance = map;
-
-  // Add tile layer with CORS support for capture
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    crossOrigin: 'anonymous',
-    maxZoom: 18
-  }).addTo(map);
-
-  // Add route polyline
-  const routeLine = L.polyline(routeData.routeCoords, {
-    color: '#2a7363', weight: 5, opacity: 0.8
-  }).addTo(map);
-
-  // Custom icons
-  const departIcon = L.divIcon({
-    html: '<div style="background:#e05040;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);">出</div>',
-    iconSize: [30, 30], iconAnchor: [15, 15], className: ''
-  });
-  const destIcon = L.divIcon({
-    html: '<div style="background:#3a8f7c;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);">着</div>',
-    iconSize: [30, 30], iconAnchor: [15, 15], className: ''
-  });
-
-  // Add markers
-  L.marker(routeData.departCoords, { icon: departIcon })
-    .addTo(map).bindPopup(`<b>出発:</b> ${routeData.departName}`);
-  L.marker(routeData.destCoords, { icon: destIcon })
-    .addTo(map).bindPopup(`<b>目的地:</b> ${routeData.destName}`);
-
-  // Fit map to route bounds with padding
-  map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
-}
-
-function restoreRouteMap(routeData) {
-  // Small delay to ensure DOM is ready
-  setTimeout(() => {
-    displayRouteMap(routeData);
-    const infoDiv = document.getElementById('routeInfo');
-    infoDiv.innerHTML = `
-      <strong>出発:</strong> ${escapeHtml(routeData.departName)}<br>
-      <strong>目的地:</strong> ${escapeHtml(routeData.destName)}<br>
-      <strong>距離:</strong> 約 ${routeData.distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${routeData.durationMin} 分（道路状況により変動）`;
-    infoDiv.style.display = 'block';
-    // Re-capture image after tiles load
-    waitForTilesAndCapture();
-  }, 300);
-}
-
-function waitForTilesAndCapture() {
-  return new Promise((resolve) => {
-    if (!routeMapInstance) { resolve(); return; }
-    const container = routeMapInstance.getContainer();
-
-    // Wait until all visible tiles are loaded
-    let attempts = 0;
-    const maxAttempts = 30;
-    const check = () => {
-      attempts++;
-      const tiles = container.querySelectorAll('img.leaflet-tile');
-      const allLoaded = Array.from(tiles).every(t => t.complete && t.naturalWidth > 0);
-      if (allLoaded || attempts >= maxAttempts) {
-        // Extra delay for rendering to settle
-        setTimeout(async () => {
-          await captureMapImage();
-          resolve();
-        }, 500);
-      } else {
-        setTimeout(check, 300);
-      }
-    };
-    // Start checking after initial render
-    setTimeout(check, 500);
-  });
-}
-
-async function captureMapImage() {
-  if (!routeMapInstance) return;
-  const container = routeMapInstance.getContainer();
-  const size = routeMapInstance.getSize();
-
-  // Method 1: Canvas capture with CORS tiles
-  let captured = false;
-  try {
-    const canvas = document.createElement('canvas');
-    const scale = 2;
-    canvas.width = size.x * scale;
-    canvas.height = size.y * scale;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(scale, scale);
-
-    // White background
-    ctx.fillStyle = '#e8e8e8';
-    ctx.fillRect(0, 0, size.x, size.y);
-
-    // Draw tiles
-    const containerRect = container.getBoundingClientRect();
-    const tileContainers = container.querySelectorAll('.leaflet-tile-container');
-    let tilesDrawn = 0;
-    for (const tc of tileContainers) {
-      const tiles = tc.querySelectorAll('img.leaflet-tile');
-      for (const tile of tiles) {
-        if (tile.complete && tile.naturalWidth > 0) {
-          const r = tile.getBoundingClientRect();
-          ctx.drawImage(tile, r.left - containerRect.left, r.top - containerRect.top, r.width, r.height);
-          tilesDrawn++;
-        }
-      }
-    }
-
-    // Draw route polyline (SVG overlay)
-    const svgEl = container.querySelector('.leaflet-overlay-pane svg');
-    if (svgEl) {
-      const svgClone = svgEl.cloneNode(true);
-      svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-      const svgStr = new XMLSerializer().serializeToString(svgClone);
-      const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-      const svgUrl = URL.createObjectURL(svgBlob);
-      try {
-        const svgImg = await new Promise((res, rej) => {
-          const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = svgUrl;
-        });
-        const sr = svgEl.getBoundingClientRect();
-        ctx.drawImage(svgImg, sr.left - containerRect.left, sr.top - containerRect.top, sr.width, sr.height);
-      } catch(e) {}
-      URL.revokeObjectURL(svgUrl);
-    }
-
-    // Draw markers (div icons)
-    const markers = container.querySelectorAll('.leaflet-marker-pane .leaflet-marker-icon');
-    for (const marker of markers) {
-      const mr = marker.getBoundingClientRect();
-      const inner = marker.querySelector('div');
-      if (inner) {
-        const cx = mr.left - containerRect.left + mr.width / 2;
-        const cy = mr.top - containerRect.top + mr.height / 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 15, 0, Math.PI * 2);
-        ctx.fillStyle = inner.style.background || inner.style.backgroundColor || '#3a8f7c';
-        ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(inner.textContent.trim(), cx, cy);
-      }
-    }
-
-    // Attribution
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.fillRect(0, size.y - 20, size.x, 20);
-    ctx.fillStyle = '#555'; ctx.font = '10px sans-serif';
-    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-    ctx.fillText('\u00A9 OpenStreetMap contributors | Route: OSRM', 4, size.y - 4);
-
-    // Test if canvas is not tainted
-    const dataUrl = canvas.toDataURL('image/png', 0.92);
-    if (tilesDrawn > 0 && dataUrl.length > 1000) {
-      routeMapImage = dataUrl;
-      try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
-      captured = true;
-    }
-  } catch(e) {
-    console.log('Canvas capture failed:', e);
-  }
-
-  // Method 2: Fallback - render route on a fresh canvas using own tile fetching
-  if (!captured && routeDataStored) {
-    try {
-      const dataUrl = await renderStaticRouteMap(routeDataStored);
-      if (dataUrl) {
-        routeMapImage = dataUrl;
-        try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
-        captured = true;
-      }
-    } catch(e) { console.log('Static render fallback failed:', e); }
-  }
-
-  // Method 3: Last resort - generate a simple SVG map
-  if (!captured && routeDataStored) {
-    routeMapImage = generateSvgRouteMap(routeDataStored);
-    try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
-  }
-}
-
-// Fallback: Fetch tiles directly with CORS and render on canvas
+// Core: Render route map as a static image on canvas
 async function renderStaticRouteMap(rd) {
-  const W = 700, H = 400;
+  const W = 700, H = 420;
   const canvas = document.createElement('canvas');
-  canvas.width = W * 2; canvas.height = H * 2;
+  const scale = 2;
+  canvas.width = W * scale; canvas.height = H * scale;
   const ctx = canvas.getContext('2d');
-  ctx.scale(2, 2);
+  ctx.scale(scale, scale);
 
-  // Calculate bounds
+  // Calculate bounds with padding
   const allLats = rd.routeCoords.map(c => c[0]);
   const allLngs = rd.routeCoords.map(c => c[1]);
   const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
   const minLng = Math.min(...allLngs), maxLng = Math.max(...allLngs);
-  const padLat = (maxLat - minLat) * 0.15 || 0.01;
-  const padLng = (maxLng - minLng) * 0.15 || 0.01;
+  const padLat = (maxLat - minLat) * 0.2 || 0.005;
+  const padLng = (maxLng - minLng) * 0.2 || 0.005;
 
-  // Determine zoom level and tile coordinates
   const centerLat = (minLat + maxLat) / 2;
   const centerLng = (minLng + maxLng) / 2;
+
+  // Find optimal zoom level
   let zoom = 14;
-  for (let z = 16; z >= 5; z--) {
+  for (let z = 17; z >= 5; z--) {
     const n = Math.pow(2, z);
-    const latRange = 360 / n;
-    const lngRange = 360 / n;
-    if ((maxLat - minLat + padLat * 2) < latRange * (H / 256) && (maxLng - minLng + padLng * 2) < lngRange * (W / 256)) {
-      zoom = z; break;
-    }
+    const lngPerPx = 360 / n / 256;
+    const latPerPx = 360 / n / 256; // approximate
+    const neededW = (maxLng - minLng + padLng * 2) / lngPerPx;
+    const neededH = (maxLat - minLat + padLat * 2) / latPerPx;
+    if (neededW <= W && neededH <= H) { zoom = z; break; }
   }
 
-  // Tile math
+  // Tile math (Web Mercator)
   const n = Math.pow(2, zoom);
-  function lngToTileX(lng) { return (lng + 180) / 360 * n; }
-  function latToTileY(lat) { return (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n; }
-  function lngToPixel(lng) { return (lngToTileX(lng) - lngToTileX(centerLng)) * 256 + W / 2; }
-  function latToPixel(lat) { return (latToTileY(lat) - latToTileY(centerLat)) * 256 + H / 2; }
+  function lng2tileX(lng) { return (lng + 180) / 360 * n; }
+  function lat2tileY(lat) { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n; }
+  function lng2px(lng) { return (lng2tileX(lng) - lng2tileX(centerLng)) * 256 + W / 2; }
+  function lat2px(lat) { return (lat2tileY(lat) - lat2tileY(centerLat)) * 256 + H / 2; }
 
-  // Fetch tiles
-  const centerTileX = Math.floor(lngToTileX(centerLng));
-  const centerTileY = Math.floor(latToTileY(centerLat));
-  const tilesX = Math.ceil(W / 256) + 2;
-  const tilesY = Math.ceil(H / 256) + 2;
-
-  ctx.fillStyle = '#e8e8e8';
+  // Background
+  ctx.fillStyle = '#dde6dd';
   ctx.fillRect(0, 0, W, H);
 
-  const tilePromises = [];
-  for (let dx = -Math.floor(tilesX / 2); dx <= Math.floor(tilesX / 2); dx++) {
-    for (let dy = -Math.floor(tilesY / 2); dy <= Math.floor(tilesY / 2); dy++) {
-      const tx = centerTileX + dx;
-      const ty = centerTileY + dy;
+  // Determine which tiles to fetch
+  const cTileX = lng2tileX(centerLng);
+  const cTileY = lat2tileY(centerLat);
+  const halfTilesX = Math.ceil(W / 256 / 2) + 1;
+  const halfTilesY = Math.ceil(H / 256 / 2) + 1;
+
+  // Fetch and draw all tiles
+  const tileJobs = [];
+  for (let dx = -halfTilesX; dx <= halfTilesX; dx++) {
+    for (let dy = -halfTilesY; dy <= halfTilesY; dy++) {
+      const tx = Math.floor(cTileX) + dx;
+      const ty = Math.floor(cTileY) + dy;
       if (tx < 0 || ty < 0 || tx >= n || ty >= n) continue;
+
+      const px = (tx - cTileX) * 256 + W / 2;
+      const py = (ty - cTileY) * 256 + H / 2;
+      // Skip tiles completely outside canvas
+      if (px + 256 < 0 || px > W || py + 256 < 0 || py > H) continue;
+
       const url = `https://tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`;
-      tilePromises.push(
-        new Promise(resolve => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            const px = (tx - lngToTileX(centerLng)) * 256 + W / 2;
-            const py = (ty - latToTileY(centerLat)) * 256 + H / 2;
-            ctx.drawImage(img, px, py, 256, 256);
-            resolve(true);
-          };
-          img.onerror = () => resolve(false);
-          img.src = url;
-        })
-      );
+      tileJobs.push({ url, px, py });
     }
   }
 
-  const results = await Promise.all(tilePromises);
-  if (!results.some(r => r)) return null; // All tiles failed
+  // Load tiles in parallel
+  const tileImages = await Promise.all(tileJobs.map(job =>
+    new Promise(resolve => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve({ img, px: job.px, py: job.py, ok: true });
+      img.onerror = () => resolve({ ok: false });
+      img.src = job.url;
+    })
+  ));
 
-  // Draw route
-  ctx.beginPath();
-  ctx.strokeStyle = '#2a7363';
-  ctx.lineWidth = 4;
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
+  // Draw tiles
+  let tilesDrawn = 0;
+  for (const t of tileImages) {
+    if (t.ok) { ctx.drawImage(t.img, t.px, t.py, 256, 256); tilesDrawn++; }
+  }
+
+  // Draw route line with outline for visibility
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // Outline
+  ctx.beginPath(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 7;
   rd.routeCoords.forEach((c, i) => {
-    const x = lngToPixel(c[1]), y = latToPixel(c[0]);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    const x = lng2px(c[1]), y = lat2px(c[0]);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  // Main line
+  ctx.beginPath(); ctx.strokeStyle = '#2a7363'; ctx.lineWidth = 4;
+  rd.routeCoords.forEach((c, i) => {
+    const x = lng2px(c[1]), y = lat2px(c[0]);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
   ctx.stroke();
 
   // Draw markers
-  function drawMarker(lat, lng, color, label) {
-    const x = lngToPixel(lng), y = latToPixel(lat);
-    ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2);
+  function drawMarker(lat, lng, color, label, name) {
+    const x = lng2px(lng), y = lat2px(lat);
+    // Shadow
+    ctx.beginPath(); ctx.arc(x + 1, y + 2, 16, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill();
+    // Circle
+    ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI * 2);
     ctx.fillStyle = color; ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.stroke();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif';
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+    // Label
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(label, x, y);
+    // Name label with background
+    if (name) {
+      ctx.font = 'bold 11px sans-serif';
+      const tw = ctx.measureText(name).width;
+      const lx = x, ly = y - 24;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(lx - tw / 2 - 4, ly - 8, tw + 8, 16);
+      ctx.strokeStyle = color; ctx.lineWidth = 1;
+      ctx.strokeRect(lx - tw / 2 - 4, ly - 8, tw + 8, 16);
+      ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(name, lx, ly);
+    }
   }
-  drawMarker(rd.departCoords[0], rd.departCoords[1], '#e05040', '出');
-  drawMarker(rd.destCoords[0], rd.destCoords[1], '#3a8f7c', '着');
+  drawMarker(rd.departCoords[0], rd.departCoords[1], '#e05040', '出', rd.departName);
+  drawMarker(rd.destCoords[0], rd.destCoords[1], '#3a8f7c', '着', rd.destName);
 
-  // Attribution
+  // Distance badge
+  const badge = `約 ${rd.distanceKm} km`;
+  ctx.font = 'bold 12px sans-serif';
+  const bw = ctx.measureText(badge).width;
+  ctx.fillStyle = 'rgba(42,115,99,0.9)';
+  const bx = W - bw - 20, by = 10;
+  ctx.fillRect(bx, by, bw + 16, 24);
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(badge, bx + 8, by + 12);
+
+  // Attribution bar
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillRect(0, H - 18, W, 18);
-  ctx.fillStyle = '#555'; ctx.font = '9px sans-serif';
+  ctx.fillRect(0, H - 20, W, 20);
+  ctx.fillStyle = '#666'; ctx.font = '10px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText('\u00A9 OpenStreetMap contributors | Route: OSRM', 4, H - 3);
+  ctx.fillText('\u00A9 OpenStreetMap contributors | Route: OSRM', 4, H - 5);
 
-  return canvas.toDataURL('image/png', 0.9);
-}
-
-// Last resort: Simple SVG route diagram
-function generateSvgRouteMap(rd) {
-  const W = 700, H = 400, PAD = 40;
-  const allLats = rd.routeCoords.map(c => c[0]);
-  const allLngs = rd.routeCoords.map(c => c[1]);
-  const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
-  const minLng = Math.min(...allLngs), maxLng = Math.max(...allLngs);
-  const rangeLat = maxLat - minLat || 0.01;
-  const rangeLng = maxLng - minLng || 0.01;
-
-  function toX(lng) { return PAD + (lng - minLng) / rangeLng * (W - PAD * 2); }
-  function toY(lat) { return H - PAD - (lat - minLat) / rangeLat * (H - PAD * 2); }
-
-  const points = rd.routeCoords.map(c => `${toX(c[1]).toFixed(1)},${toY(c[0]).toFixed(1)}`).join(' ');
-  const dx = toX(rd.departCoords[1]), dy = toY(rd.departCoords[0]);
-  const ax = toX(rd.destCoords[1]), ay = toY(rd.destCoords[0]);
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-    <rect width="${W}" height="${H}" fill="#eef4ee" rx="8"/>
-    <polyline points="${points}" fill="none" stroke="#2a7363" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${dx}" cy="${dy}" r="14" fill="#e05040" stroke="#fff" stroke-width="2.5"/>
-    <text x="${dx}" y="${dy + 1}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="13" font-weight="bold">出</text>
-    <circle cx="${ax}" cy="${ay}" r="14" fill="#3a8f7c" stroke="#fff" stroke-width="2.5"/>
-    <text x="${ax}" y="${ay + 1}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="13" font-weight="bold">着</text>
-    <text x="${dx}" y="${dy - 22}" text-anchor="middle" fill="#c0392b" font-size="11" font-weight="bold">${rd.departName}</text>
-    <text x="${ax}" y="${ay - 22}" text-anchor="middle" fill="#2a7363" font-size="11" font-weight="bold">${rd.destName}</text>
-    <text x="${W / 2}" y="${H - 6}" text-anchor="middle" fill="#999" font-size="9">\u00A9 OpenStreetMap contributors | Route: OSRM | 約${rd.distanceKm}km</text>
-  </svg>`;
-
-  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+  return canvas.toDataURL('image/png', 0.92);
 }
 
 function clearRouteMap() {
-  if (routeMapInstance) { routeMapInstance.remove(); routeMapInstance = null; }
   routeMapImage = ''; routeDataStored = null;
   localStorage.removeItem('outing_route_image');
   localStorage.removeItem('outing_route_data');
+  document.getElementById('routeMapImg').src = '';
   document.getElementById('routeMapWrap').classList.remove('show');
   document.getElementById('routeInfo').style.display = 'none';
   document.getElementById('btn_route_clear').style.display = 'none';
@@ -2122,9 +1922,9 @@ function clearAll() {
   document.getElementById('dest_photos_area').style.display = 'none';
   document.getElementById('dest_photos_grid').innerHTML = '';
   // Clear route map
-  if (routeMapInstance) { routeMapInstance.remove(); routeMapInstance = null; }
   routeMapImage = ''; routeDataStored = null;
   localStorage.removeItem('outing_route_image'); localStorage.removeItem('outing_route_data');
+  document.getElementById('routeMapImg').src = '';
   document.getElementById('routeMapWrap').classList.remove('show');
   document.getElementById('routeInfo').style.display = 'none';
   document.getElementById('btn_route_clear').style.display = 'none';
