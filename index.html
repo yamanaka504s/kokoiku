@@ -1043,9 +1043,6 @@ function clearDestInfo() {
 // ── Route Map ──
 // ══════════════════════════════════════
 
-// Hardcoded known location
-var GENKI_LAT = 34.60695, GENKI_LNG = 133.78827;
-
 function decodePolyline(encoded) {
   var coords = [], index = 0, lat = 0, lng = 0;
   while (index < encoded.length) {
@@ -1060,8 +1057,37 @@ function decodePolyline(encoded) {
   return coords;
 }
 
+// Geocoding using Japan GSI (国土地理院) API - highest accuracy for Japanese addresses
+async function geocodeWithGSI(address) {
+  var url = 'https://msearch.gsi.go.jp/address-search/AddressSearch?q=' + encodeURIComponent(address);
+  var res = await fetch(url);
+  var data = await res.json();
+  if (data && data.length > 0) {
+    // GeoJSON format: coordinates are [lng, lat]
+    var coords = data[0].geometry.coordinates;
+    var title = data[0].properties.title || address;
+    return { lat: coords[1], lng: coords[0], display: title };
+  }
+  return null;
+}
+
 async function geocodeAddress(address, label) {
-  // 1. Nominatim (reliable for named places)
+  // 1st: 国土地理院 GSI (most accurate for Japanese addresses)
+  try {
+    var gsi = await geocodeWithGSI(address);
+    if (gsi) return gsi;
+  } catch(e) { console.log('GSI geocode error:', e); }
+
+  // 2nd: Try simplified address with GSI
+  try {
+    var cleaned = address.replace(/[\s　]+/g, '');
+    if (cleaned !== address) {
+      var gsi2 = await geocodeWithGSI(cleaned);
+      if (gsi2) return gsi2;
+    }
+  } catch(e) {}
+
+  // 3rd: Nominatim (for named places/facilities)
   try {
     var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=jp&accept-language=ja&q=' + encodeURIComponent(address);
     var res = await fetch(url);
@@ -1070,21 +1096,6 @@ async function geocodeAddress(address, label) {
       var lt = parseFloat(data[0].lat), ln = parseFloat(data[0].lon);
       if (lt >= 24 && lt <= 46 && ln >= 122 && ln <= 154) {
         return { lat: lt, lng: ln, display: data[0].display_name };
-      }
-    }
-  } catch(e) {}
-
-  // 2. Claude AI
-  try {
-    var prompt = 'Japanese address geocoder. Return ONLY JSON: {"lat":number,"lng":number}\n' +
-      'Reference: Okayama pref lat~34.6 lng~133.8, Tokyo lat~35.68 lng~139.77\nAddress: ' + address;
-    var result = await callClaude('Return only {"lat":number,"lng":number} for the given Japanese address. No other text.', [{ role: 'user', content: prompt }], 80);
-    var match = result.match(/"lat"\s*:\s*([-\d.]+)[\s\S]*?"lng"\s*:\s*([-\d.]+)/);
-    if (match) {
-      var lt = parseFloat(match[1]), ln = parseFloat(match[2]);
-      if (lt > 100 && ln < 100) { var tmp = lt; lt = ln; ln = tmp; }
-      if (lt >= 24 && lt <= 46 && ln >= 122 && ln <= 154) {
-        return { lat: lt, lng: ln, display: address };
       }
     }
   } catch(e) {}
@@ -1108,7 +1119,7 @@ async function generateRouteMap() {
     toast('出発地を検索中...');
     var departGeo;
     if (isGenki) {
-      departGeo = { lat: GENKI_LAT, lng: GENKI_LNG, display: '元気の家' };
+      departGeo = await geocodeAddress('岡山県倉敷市徳芳501-1', '出発場所（元気の家）');
     } else {
       departGeo = await geocodeAddress(getDepartureAddress(), '出発場所');
     }
