@@ -820,10 +820,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('routeMapImg').src = routeMapImage;
     document.getElementById('routeMapWrap').classList.add('show');
     document.getElementById('btn_route_clear').style.display = 'inline-flex';
-    const rd = routeDataStored;
-    const infoDiv = document.getElementById('routeInfo');
-    infoDiv.innerHTML = `<strong>出発:</strong> ${escapeHtml(rd.departName)}<br><strong>目的地:</strong> ${escapeHtml(rd.destName)}<br><strong>距離:</strong> 約 ${rd.distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${rd.durationMin} 分（道路状況により変動）`;
-    infoDiv.style.display = 'block';
+    showRouteInfo(routeDataStored);
   }
 
   // Restore illust
@@ -1045,7 +1042,24 @@ function clearDestInfo() {
 // ── Route Map (Static Image - PC/SP both) ──
 // ══════════════════════════════════════
 async function geocodeAddress(address, label) {
-  const queries = buildGeoQueries(address);
+  // Primary: Claude AI (Japanese address geocoding with high accuracy)
+  try {
+    const result = await callClaude(
+      'あなたは日本の住所や施設名から正確な緯度経度を特定するジオコーディングの専門家です。以下の住所や施設名の正確な緯度と経度を特定してください。ルール：Google Mapsで検索した場合と同等の精度で、できるだけ正確な座標を返すこと。施設名の場合はその施設の正門や入口付近の座標を返すこと。番地レベルまで含まれる住所は、その番地の位置を正確に特定すること。数値は小数点以下5桁以上の精度で出力すること。出力形式: {"lat":数値,"lng":数値,"resolved":"特定した場所の正式名称"} のみ出力し、他のテキストは一切出力しないこと。',
+      [{ role: 'user', content: address }], 200
+    );
+    const match = result.match(/\{\s*"lat"\s*:\s*([-\d.]+)\s*,\s*"lng"\s*:\s*([-\d.]+)\s*(?:,\s*"resolved"\s*:\s*"([^"]*)")?\s*\}/);
+    if (match) {
+      return {
+        lat: parseFloat(match[1]),
+        lng: parseFloat(match[2]),
+        display: match[3] || address
+      };
+    }
+  } catch(e) { console.log('Claude geocode failed:', e); }
+
+  // Fallback: Nominatim
+  const queries = [address, address.replace(/[\s　]+/g, '')];
   for (const q of queries) {
     try {
       const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=jp&accept-language=ja`;
@@ -1054,42 +1068,11 @@ async function geocodeAddress(address, label) {
       if (data.length) {
         return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
       }
-    } catch(e) { /* try next */ }
+    } catch(e) {}
   }
-  // Fallback: Claude AI geocoding
-  try {
-    const result = await callClaude(
-      '日本の住所または施設���から緯度・経度を推定してください。JSON形式 {"lat":数値,"lng":数値} のみを出力してください。他のテキストは不要です。',
-      [{ role: 'user', content: address }], 100
-    );
-    const match = result.match(/\{\s*"lat"\s*:\s*([-\d.]+)\s*,\s*"lng"\s*:\s*([-\d.]+)\s*\}/);
-    if (match) {
-      return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), display: address };
-    }
-  } catch(e) {}
-  throw new Error(`住所が見つかりません: ${label || address}`);
+  throw new Error('住所が見つかりません: ' + (label || address));
 }
 
-function buildGeoQueries(address) {
-  const queries = [];
-  const cleaned = address.replace(/[\s　]+/g, '').replace(/[（(][^）)]*[）)]/g, '');
-  queries.push(address);
-  if (cleaned !== address) queries.push(cleaned);
-  const simplified = cleaned
-    .replace(/[0-9０-９]+(階|F|号室|号).*$/, '')
-    .replace(/[\-ー－][0-9０-９]+[\-ー－][0-9０-９]+$/, (m) => m.split(/[\-ー－]/)[0] + m.split(/[\-ー－]/)[1]);
-  if (simplified !== cleaned) queries.push(simplified);
-  const cityMatch = cleaned.match(/^(.+?[都道府県])(.+?[市区町村郡])/);
-  if (cityMatch) {
-    const afterCity = cleaned.slice(cityMatch[0].length);
-    const townMatch = afterCity.match(/^(.+?[町村丁目])/);
-    if (townMatch) queries.push(cityMatch[0] + townMatch[1]);
-    queries.push(cityMatch[0]);
-  }
-  const structured = cleaned.replace(/([都道府県])/, '$1 ').replace(/([市区町村郡])/, '$1 ');
-  if (structured !== cleaned) queries.push(structured);
-  return [...new Set(queries)];
-}
 
 function decodePolyline(encoded) {
   const coords = [];
@@ -1153,12 +1136,13 @@ async function generateRouteMap() {
       routeCoords: routeCoords,
       departName: document.getElementById('departOther').checked ? getVal('departAddress') : '元気の家',
       destName: getVal('destination') || getVal('destAddress'),
+      departResolved: departGeo.display,
+      destResolved: destGeo.display,
       distanceKm: distanceKm,
       durationMin: durationMin
     };
 
     toast('マップを描画中...');
-    // Render static map image directly (no Leaflet needed)
     const dataUrl = await renderStaticRouteMap(routeData);
     routeMapImage = dataUrl;
     routeDataStored = routeData;
@@ -1169,12 +1153,7 @@ async function generateRouteMap() {
     document.getElementById('routeMapWrap').classList.add('show');
     document.getElementById('btn_route_clear').style.display = 'inline-flex';
 
-    const infoDiv = document.getElementById('routeInfo');
-    infoDiv.innerHTML = `
-      <strong>出発:</strong> ${escapeHtml(routeData.departName)}<br>
-      <strong>目的地:</strong> ${escapeHtml(routeData.destName)}<br>
-      <strong>距離:</strong> 約 ${distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${durationMin} 分（道路状況により変動）`;
-    infoDiv.style.display = 'block';
+    showRouteInfo(routeData);
 
     // Save
     localStorage.setItem('outing_route_data', JSON.stringify(routeData));
@@ -1338,6 +1317,19 @@ async function renderStaticRouteMap(rd) {
   ctx.fillText('\u00A9 OpenStreetMap contributors | Route: OSRM', 4, H - 5);
 
   return canvas.toDataURL('image/png', 0.92);
+}
+
+function showRouteInfo(rd) {
+  const infoDiv = document.getElementById('routeInfo');
+  const depLabel = escapeHtml(rd.departName);
+  const destLabel = escapeHtml(rd.destName);
+  const depResolved = rd.departResolved ? `<span style="font-size:.78rem;color:var(--text-light);">（AI特定: ${escapeHtml(rd.departResolved)}）</span>` : '';
+  const destResolved = rd.destResolved ? `<span style="font-size:.78rem;color:var(--text-light);">（AI特定: ${escapeHtml(rd.destResolved)}）</span>` : '';
+  infoDiv.innerHTML = `
+    <strong>出発:</strong> ${depLabel} ${depResolved}<br>
+    <strong>目的地:</strong> ${destLabel} ${destResolved}<br>
+    <strong>距離:</strong> 約 ${rd.distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${rd.durationMin} 分（道路状況により変動）`;
+  infoDiv.style.display = 'block';
 }
 
 function clearRouteMap() {
