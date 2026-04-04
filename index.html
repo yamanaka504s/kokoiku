@@ -1050,11 +1050,14 @@ async function geocodeAddress(address, label) {
     );
     const match = result.match(/\{\s*"lat"\s*:\s*([-\d.]+)\s*,\s*"lng"\s*:\s*([-\d.]+)\s*(?:,\s*"resolved"\s*:\s*"([^"]*)")?\s*\}/);
     if (match) {
-      return {
-        lat: parseFloat(match[1]),
-        lng: parseFloat(match[2]),
-        display: match[3] || address
-      };
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      // lat/lng swap detection: if lat looks like lng and vice versa, swap them
+      const finalLat = (lng >= 24 && lng <= 46 && lat >= 122 && lat <= 154) ? lng : lat;
+      const finalLng = (lng >= 24 && lng <= 46 && lat >= 122 && lat <= 154) ? lat : lng;
+      if (isValidJapanCoords(finalLat, finalLng)) {
+        return { lat: finalLat, lng: finalLng, display: match[3] || address };
+      }
     }
   } catch(e) { console.log('Claude geocode failed:', e); }
 
@@ -1066,7 +1069,11 @@ async function geocodeAddress(address, label) {
       const res = await fetch(url, { headers: { 'Accept-Language': 'ja' } });
       const data = await res.json();
       if (data.length) {
-        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        if (isValidJapanCoords(lat, lng)) {
+          return { lat, lng, display: data[0].display_name };
+        }
       }
     } catch(e) {}
   }
@@ -1170,6 +1177,7 @@ async function generateRouteMap() {
 }
 
 // Core: Render route map as a static image on canvas
+// Uses standard OSM Slippy Map math (global pixel coordinates)
 async function renderStaticRouteMap(rd) {
   const W = 700, H = 420;
   const canvas = document.createElement('canvas');
@@ -1178,138 +1186,158 @@ async function renderStaticRouteMap(rd) {
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
 
-  // Calculate bounds with padding
+  // === Global Pixel Coordinate System (standard OSM) ===
+  // At zoom z, the world is 256 * 2^z pixels wide and tall.
+  // globalX = (lng + 180) / 360 * 256 * 2^z
+  // globalY = (1 - ln(tan(lat_rad) + 1/cos(lat_rad)) / PI) / 2 * 256 * 2^z
+
+  function toGlobalX(lng, z) {
+    return (lng + 180.0) / 360.0 * 256 * Math.pow(2, z);
+  }
+  function toGlobalY(lat, z) {
+    const latRad = lat * Math.PI / 180.0;
+    return (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * 256 * Math.pow(2, z);
+  }
+
+  // Calculate bounds from route
   const allLats = rd.routeCoords.map(c => c[0]);
   const allLngs = rd.routeCoords.map(c => c[1]);
   const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
   const minLng = Math.min(...allLngs), maxLng = Math.max(...allLngs);
-  const padLat = (maxLat - minLat) * 0.2 || 0.005;
-  const padLng = (maxLng - minLng) * 0.2 || 0.005;
 
   const centerLat = (minLat + maxLat) / 2;
   const centerLng = (minLng + maxLng) / 2;
 
-  // Find optimal zoom level
-  let zoom = 14;
-  for (let z = 17; z >= 5; z--) {
-    const n = Math.pow(2, z);
-    const lngPerPx = 360 / n / 256;
-    const latPerPx = 360 / n / 256; // approximate
-    const neededW = (maxLng - minLng + padLng * 2) / lngPerPx;
-    const neededH = (maxLat - minLat + padLat * 2) / latPerPx;
-    if (neededW <= W && neededH <= H) { zoom = z; break; }
+  // Find optimal zoom: highest zoom where route + padding fits in canvas
+  let zoom = 12;
+  for (let z = 17; z >= 3; z--) {
+    const topY    = toGlobalY(maxLat, z);
+    const bottomY = toGlobalY(minLat, z);
+    const leftX   = toGlobalX(minLng, z);
+    const rightX  = toGlobalX(maxLng, z);
+    const routeW = Math.abs(rightX - leftX);
+    const routeH = Math.abs(bottomY - topY);
+    // Route must fit with 25% padding on each side
+    if (routeW * 1.5 <= W && routeH * 1.5 <= H) {
+      zoom = z;
+      break;
+    }
   }
 
-  // Tile math (Web Mercator)
-  const n = Math.pow(2, zoom);
-  function lng2tileX(lng) { return (lng + 180) / 360 * n; }
-  function lat2tileY(lat) { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n; }
-  function lng2px(lng) { return (lng2tileX(lng) - lng2tileX(centerLng)) * 256 + W / 2; }
-  function lat2px(lat) { return (lat2tileY(lat) - lat2tileY(centerLat)) * 256 + H / 2; }
+  // Center in global pixels
+  const centerGX = toGlobalX(centerLng, zoom);
+  const centerGY = toGlobalY(centerLat, zoom);
+
+  // Convert geo coords to canvas pixel
+  function geoToCanvas(lat, lng) {
+    const gx = toGlobalX(lng, zoom);
+    const gy = toGlobalY(lat, zoom);
+    return {
+      x: gx - centerGX + W / 2,
+      y: gy - centerGY + H / 2
+    };
+  }
 
   // Background
   ctx.fillStyle = '#dde6dd';
   ctx.fillRect(0, 0, W, H);
 
-  // Determine which tiles to fetch
-  const cTileX = lng2tileX(centerLng);
-  const cTileY = lat2tileY(centerLat);
-  const halfTilesX = Math.ceil(W / 256 / 2) + 1;
-  const halfTilesY = Math.ceil(H / 256 / 2) + 1;
+  // === Fetch and draw map tiles ===
+  // Canvas top-left in global pixels
+  const originGX = centerGX - W / 2;
+  const originGY = centerGY - H / 2;
 
-  // Fetch and draw all tiles
+  // Tile range that covers the canvas
+  const tileMinX = Math.floor(originGX / 256);
+  const tileMinY = Math.floor(originGY / 256);
+  const tileMaxX = Math.floor((originGX + W) / 256);
+  const tileMaxY = Math.floor((originGY + H) / 256);
+  const maxTile = Math.pow(2, zoom) - 1;
+
   const tileJobs = [];
-  for (let dx = -halfTilesX; dx <= halfTilesX; dx++) {
-    for (let dy = -halfTilesY; dy <= halfTilesY; dy++) {
-      const tx = Math.floor(cTileX) + dx;
-      const ty = Math.floor(cTileY) + dy;
-      if (tx < 0 || ty < 0 || tx >= n || ty >= n) continue;
-
-      const px = (tx - cTileX) * 256 + W / 2;
-      const py = (ty - cTileY) * 256 + H / 2;
-      // Skip tiles completely outside canvas
-      if (px + 256 < 0 || px > W || py + 256 < 0 || py > H) continue;
-
+  for (let tx = tileMinX; tx <= tileMaxX; tx++) {
+    for (let ty = tileMinY; ty <= tileMaxY; ty++) {
+      if (tx < 0 || ty < 0 || tx > maxTile || ty > maxTile) continue;
+      // Canvas position of this tile's top-left corner
+      const canvasX = tx * 256 - originGX;
+      const canvasY = ty * 256 - originGY;
       const url = `https://tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`;
-      tileJobs.push({ url, px, py });
+      tileJobs.push({ url, canvasX, canvasY });
     }
   }
 
-  // Load tiles in parallel
-  const tileImages = await Promise.all(tileJobs.map(job =>
+  // Load all tiles in parallel
+  const tiles = await Promise.all(tileJobs.map(job =>
     new Promise(resolve => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => resolve({ img, px: job.px, py: job.py, ok: true });
+      img.onload = () => resolve({ img, x: job.canvasX, y: job.canvasY, ok: true });
       img.onerror = () => resolve({ ok: false });
       img.src = job.url;
     })
   ));
 
   // Draw tiles
-  let tilesDrawn = 0;
-  for (const t of tileImages) {
-    if (t.ok) { ctx.drawImage(t.img, t.px, t.py, 256, 256); tilesDrawn++; }
+  for (const t of tiles) {
+    if (t.ok) ctx.drawImage(t.img, t.x, t.y, 256, 256);
   }
 
-  // Draw route line with outline for visibility
+  // === Draw route line ===
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  // Outline
+  // White outline
   ctx.beginPath(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 7;
   rd.routeCoords.forEach((c, i) => {
-    const x = lng2px(c[1]), y = lat2px(c[0]);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    const p = geoToCanvas(c[0], c[1]);
+    i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
   });
   ctx.stroke();
-  // Main line
+  // Green line
   ctx.beginPath(); ctx.strokeStyle = '#2a7363'; ctx.lineWidth = 4;
   rd.routeCoords.forEach((c, i) => {
-    const x = lng2px(c[1]), y = lat2px(c[0]);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    const p = geoToCanvas(c[0], c[1]);
+    i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
   });
   ctx.stroke();
 
-  // Draw markers
+  // === Draw markers ===
   function drawMarker(lat, lng, color, label, name) {
-    const x = lng2px(lng), y = lat2px(lat);
+    const p = geoToCanvas(lat, lng);
     // Shadow
-    ctx.beginPath(); ctx.arc(x + 1, y + 2, 16, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(p.x + 1, p.y + 2, 16, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill();
     // Circle
-    ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
     ctx.fillStyle = color; ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
-    // Label
+    // Letter
     ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(label, x, y);
-    // Name label with background
+    ctx.fillText(label, p.x, p.y);
+    // Name tag
     if (name) {
       ctx.font = 'bold 11px sans-serif';
       const tw = ctx.measureText(name).width;
-      const lx = x, ly = y - 24;
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillRect(lx - tw / 2 - 4, ly - 8, tw + 8, 16);
+      ctx.fillRect(p.x - tw / 2 - 4, p.y - 32, tw + 8, 16);
       ctx.strokeStyle = color; ctx.lineWidth = 1;
-      ctx.strokeRect(lx - tw / 2 - 4, ly - 8, tw + 8, 16);
+      ctx.strokeRect(p.x - tw / 2 - 4, p.y - 32, tw + 8, 16);
       ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(name, lx, ly);
+      ctx.fillText(name, p.x, p.y - 24);
     }
   }
   drawMarker(rd.departCoords[0], rd.departCoords[1], '#e05040', '出', rd.departName);
   drawMarker(rd.destCoords[0], rd.destCoords[1], '#3a8f7c', '着', rd.destName);
 
   // Distance badge
-  const badge = `約 ${rd.distanceKm} km`;
+  const badge = '\u7D04 ' + rd.distanceKm + ' km';
   ctx.font = 'bold 12px sans-serif';
   const bw = ctx.measureText(badge).width;
   ctx.fillStyle = 'rgba(42,115,99,0.9)';
-  const bx = W - bw - 20, by = 10;
-  ctx.fillRect(bx, by, bw + 16, 24);
+  ctx.fillRect(W - bw - 28, 10, bw + 16, 24);
   ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(badge, bx + 8, by + 12);
+  ctx.fillText(badge, W - bw - 20, 22);
 
-  // Attribution bar
+  // Attribution
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.fillRect(0, H - 20, W, 20);
   ctx.fillStyle = '#666'; ctx.font = '10px sans-serif';
@@ -1321,15 +1349,20 @@ async function renderStaticRouteMap(rd) {
 
 function showRouteInfo(rd) {
   const infoDiv = document.getElementById('routeInfo');
-  const depLabel = escapeHtml(rd.departName);
-  const destLabel = escapeHtml(rd.destName);
-  const depResolved = rd.departResolved ? `<span style="font-size:.78rem;color:var(--text-light);">（AI特定: ${escapeHtml(rd.departResolved)}）</span>` : '';
-  const destResolved = rd.destResolved ? `<span style="font-size:.78rem;color:var(--text-light);">（AI特定: ${escapeHtml(rd.destResolved)}）</span>` : '';
+  const depCoord = `<span style="font-size:.72rem;color:#999;">[${rd.departCoords[0].toFixed(5)}, ${rd.departCoords[1].toFixed(5)}]</span>`;
+  const destCoord = `<span style="font-size:.72rem;color:#999;">[${rd.destCoords[0].toFixed(5)}, ${rd.destCoords[1].toFixed(5)}]</span>`;
+  const depResolved = rd.departResolved ? `<span style="font-size:.78rem;color:var(--text-light);">→ ${escapeHtml(rd.departResolved)}</span>` : '';
+  const destResolved = rd.destResolved ? `<span style="font-size:.78rem;color:var(--text-light);">→ ${escapeHtml(rd.destResolved)}</span>` : '';
   infoDiv.innerHTML = `
-    <strong>出発:</strong> ${depLabel} ${depResolved}<br>
-    <strong>目的地:</strong> ${destLabel} ${destResolved}<br>
+    <strong>出発:</strong> ${escapeHtml(rd.departName)} ${depResolved} ${depCoord}<br>
+    <strong>目的地:</strong> ${escapeHtml(rd.destName)} ${destResolved} ${destCoord}<br>
     <strong>距離:</strong> 約 ${rd.distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${rd.durationMin} 分（道路状況により変動）`;
   infoDiv.style.display = 'block';
+}
+
+// Validate coordinates are within Japan
+function isValidJapanCoords(lat, lng) {
+  return lat >= 24 && lat <= 46 && lng >= 122 && lng <= 154;
 }
 
 function clearRouteMap() {
