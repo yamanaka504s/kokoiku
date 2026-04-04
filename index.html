@@ -1038,54 +1038,18 @@ function clearDestInfo() {
   toast('目的地情報をクリアしました');
 }
 
-// ══════════════════════════════════════
-// ── Route Map (Static Image - PC/SP both) ──
-// ══════════════════════════════════════
-async function geocodeAddress(address, label) {
-  // Primary: Claude AI (Japanese address geocoding with high accuracy)
-  try {
-    const result = await callClaude(
-      'あなたは日本の住所や施設名から正確な緯度経度を特定するジオコーディングの専門家です。以下の住所や施設名の正確な緯度と経度を特定してください。ルール：Google Mapsで検索した場合と同等の精度で、できるだけ正確な座標を返すこと。施設名の場合はその施設の正門や入口付近の座標を返すこと。番地レベルまで含まれる住所は、その番地の位置を正確に特定すること。数値は小数点以下5桁以上の精度で出力すること。出力形式: {"lat":数値,"lng":数値,"resolved":"特定した場所の正式名称"} のみ出力し、他のテキストは一切出力しないこと。',
-      [{ role: 'user', content: address }], 200
-    );
-    const match = result.match(/\{\s*"lat"\s*:\s*([-\d.]+)\s*,\s*"lng"\s*:\s*([-\d.]+)\s*(?:,\s*"resolved"\s*:\s*"([^"]*)")?\s*\}/);
-    if (match) {
-      const lat = parseFloat(match[1]);
-      const lng = parseFloat(match[2]);
-      // lat/lng swap detection: if lat looks like lng and vice versa, swap them
-      const finalLat = (lng >= 24 && lng <= 46 && lat >= 122 && lat <= 154) ? lng : lat;
-      const finalLng = (lng >= 24 && lng <= 46 && lat >= 122 && lat <= 154) ? lat : lng;
-      if (isValidJapanCoords(finalLat, finalLng)) {
-        return { lat: finalLat, lng: finalLng, display: match[3] || address };
-      }
-    }
-  } catch(e) { console.log('Claude geocode failed:', e); }
 
-  // Fallback: Nominatim
-  const queries = [address, address.replace(/[\s　]+/g, '')];
-  for (const q of queries) {
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=jp&accept-language=ja`;
-      const res = await fetch(url, { headers: { 'Accept-Language': 'ja' } });
-      const data = await res.json();
-      if (data.length) {
-        const lat = parseFloat(data[0].lat);
-        const lng = parseFloat(data[0].lon);
-        if (isValidJapanCoords(lat, lng)) {
-          return { lat, lng, display: data[0].display_name };
-        }
-      }
-    } catch(e) {}
-  }
-  throw new Error('住所が見つかりません: ' + (label || address));
-}
+// ══════════════════════════════════════
+// ── Route Map ──
+// ══════════════════════════════════════
 
+// Hardcoded known location
+var GENKI_LAT = 34.60695, GENKI_LNG = 133.78827;
 
 function decodePolyline(encoded) {
-  const coords = [];
-  let index = 0, lat = 0, lng = 0;
+  var coords = [], index = 0, lat = 0, lng = 0;
   while (index < encoded.length) {
-    let b, shift = 0, result = 0;
+    var b, shift = 0, result = 0;
     do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
     lat += (result & 1) ? ~(result >> 1) : (result >> 1);
     shift = 0; result = 0;
@@ -1096,273 +1060,247 @@ function decodePolyline(encoded) {
   return coords;
 }
 
+async function geocodeAddress(address, label) {
+  // 1. Nominatim (reliable for named places)
+  try {
+    var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=jp&accept-language=ja&q=' + encodeURIComponent(address);
+    var res = await fetch(url);
+    var data = await res.json();
+    if (data.length) {
+      var lt = parseFloat(data[0].lat), ln = parseFloat(data[0].lon);
+      if (lt >= 24 && lt <= 46 && ln >= 122 && ln <= 154) {
+        return { lat: lt, lng: ln, display: data[0].display_name };
+      }
+    }
+  } catch(e) {}
+
+  // 2. Claude AI
+  try {
+    var prompt = 'Japanese address geocoder. Return ONLY JSON: {"lat":number,"lng":number}\n' +
+      'Reference: Okayama pref lat~34.6 lng~133.8, Tokyo lat~35.68 lng~139.77\nAddress: ' + address;
+    var result = await callClaude('Return only {"lat":number,"lng":number} for the given Japanese address. No other text.', [{ role: 'user', content: prompt }], 80);
+    var match = result.match(/"lat"\s*:\s*([-\d.]+)[\s\S]*?"lng"\s*:\s*([-\d.]+)/);
+    if (match) {
+      var lt = parseFloat(match[1]), ln = parseFloat(match[2]);
+      if (lt > 100 && ln < 100) { var tmp = lt; lt = ln; ln = tmp; }
+      if (lt >= 24 && lt <= 46 && ln >= 122 && ln <= 154) {
+        return { lat: lt, lng: ln, display: address };
+      }
+    }
+  } catch(e) {}
+
+  throw new Error(label + 'の住所が見つかりません');
+}
+
 async function generateRouteMap() {
-  const departAddr = getDepartureAddress();
-  const destAddr = getVal('destAddress') || getVal('destination');
-
+  var destAddr = getVal('destAddress') || getVal('destination');
   if (!destAddr) { toast('外出先または外出先の住所を入力してください'); return; }
-  if (document.getElementById('departOther').checked && !departAddr) {
-    toast('出発場所の住所を入力してください'); return;
-  }
+  var isGenki = document.getElementById('departGenki').checked;
+  if (!isGenki && !getVal('departAddress')) { toast('出発場所の住所を入力してください'); return; }
 
-  const spinner = document.getElementById('spin_route');
-  const btns = document.getElementById('field_route').querySelectorAll('button');
-  btns.forEach(b => b.disabled = true);
+  var spinner = document.getElementById('spin_route');
+  var btns = document.getElementById('field_route').querySelectorAll('button');
+  btns.forEach(function(b) { b.disabled = true; });
   spinner.style.display = 'inline-block';
 
   try {
-    toast('住所を検索中...');
-    const destName = getVal('destination');
-    const destSearch = destAddr || destName;
-    const destSearchAlt = (destAddr && destName) ? destName + ' ' + destAddr : null;
-
-    let departGeo, destGeo;
-    departGeo = await geocodeAddress(departAddr, '出発場所');
-    try {
-      destGeo = await geocodeAddress(destSearch, '目的地');
-    } catch(e) {
-      if (destSearchAlt) destGeo = await geocodeAddress(destSearchAlt, '目的地');
-      else throw e;
+    // Departure
+    toast('出発地を検索中...');
+    var departGeo;
+    if (isGenki) {
+      departGeo = { lat: GENKI_LAT, lng: GENKI_LNG, display: '元気の家' };
+    } else {
+      departGeo = await geocodeAddress(getDepartureAddress(), '出発場所');
     }
 
-    toast('ルートを計算中...');
-    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${departGeo.lng},${departGeo.lat};${destGeo.lng},${destGeo.lat}?overview=full&geometries=polyline`;
-    const osrmRes = await fetch(osrmUrl);
-    const osrmData = await osrmRes.json();
+    // Destination
+    toast('目的地を検索中...');
+    var destGeo = null;
+    var destName = getVal('destination');
+    var destAddress = getVal('destAddress');
+    if (destAddress) { try { destGeo = await geocodeAddress(destAddress, '目的地'); } catch(e) {} }
+    if (!destGeo && destName) { try { destGeo = await geocodeAddress(destName, '目的地'); } catch(e) {} }
+    if (!destGeo && destAddress && destName) { destGeo = await geocodeAddress(destName + ' ' + destAddress, '目的地'); }
+    if (!destGeo) throw new Error('目的地の住所が見つかりません');
 
+    // OSRM Route
+    toast('ルートを計算中...');
+    var osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' +
+      departGeo.lng + ',' + departGeo.lat + ';' + destGeo.lng + ',' + destGeo.lat +
+      '?overview=full&geometries=polyline';
+    var osrmRes = await fetch(osrmUrl);
+    var osrmData = await osrmRes.json();
     if (!osrmData.routes || !osrmData.routes.length) throw new Error('ルートが見つかりません');
 
-    const route = osrmData.routes[0];
-    const routeCoords = decodePolyline(route.geometry);
-    const distanceKm = (route.distance / 1000).toFixed(1);
-    const durationMin = Math.round(route.duration / 60);
+    var route = osrmData.routes[0];
+    var routeCoords = decodePolyline(route.geometry);
+    var distKm = (route.distance / 1000).toFixed(1);
+    var durMin = Math.round(route.duration / 60);
+    var dName = isGenki ? '元気の家' : getVal('departAddress');
 
-    const routeData = {
+    var routeData = {
       departCoords: [departGeo.lat, departGeo.lng],
       destCoords: [destGeo.lat, destGeo.lng],
       routeCoords: routeCoords,
-      departName: document.getElementById('departOther').checked ? getVal('departAddress') : '元気の家',
-      destName: getVal('destination') || getVal('destAddress'),
+      departName: dName,
+      destName: destName || destAddress,
       departResolved: departGeo.display,
       destResolved: destGeo.display,
-      distanceKm: distanceKm,
-      durationMin: durationMin
+      distanceKm: distKm,
+      durationMin: durMin,
+      gmapUrl: 'https://www.google.com/maps/dir/' + departGeo.lat + ',' + departGeo.lng + '/' + destGeo.lat + ',' + destGeo.lng + '/'
     };
 
     toast('マップを描画中...');
-    const dataUrl = await renderStaticRouteMap(routeData);
-    routeMapImage = dataUrl;
+    routeMapImage = await renderStaticRouteMap(routeData);
     routeDataStored = routeData;
 
-    // Display
-    const img = document.getElementById('routeMapImg');
-    img.src = routeMapImage;
+    document.getElementById('routeMapImg').src = routeMapImage;
     document.getElementById('routeMapWrap').classList.add('show');
     document.getElementById('btn_route_clear').style.display = 'inline-flex';
-
     showRouteInfo(routeData);
 
-    // Save
     localStorage.setItem('outing_route_data', JSON.stringify(routeData));
     try { localStorage.setItem('outing_route_image', routeMapImage); } catch(e) {}
-
     toast('ルートマップを作成しました');
   } catch (e) {
     console.error('Route map error:', e);
-    toast('ルートマップの作成に失敗しました: ' + e.message);
+    toast(e.message || 'ルートマップの作成に失敗しました');
   } finally {
-    btns.forEach(b => b.disabled = false);
+    btns.forEach(function(b) { b.disabled = false; });
     spinner.style.display = 'none';
   }
 }
 
-// Core: Render route map as a static image on canvas
-// Uses standard OSM Slippy Map math (global pixel coordinates)
 async function renderStaticRouteMap(rd) {
-  const W = 700, H = 420;
-  const canvas = document.createElement('canvas');
-  const scale = 2;
-  canvas.width = W * scale; canvas.height = H * scale;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
+  var W = 700, H = 420, S = 2;
+  var canvas = document.createElement('canvas');
+  canvas.width = W * S; canvas.height = H * S;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(S, S);
 
-  // === Global Pixel Coordinate System (standard OSM) ===
-  // At zoom z, the world is 256 * 2^z pixels wide and tall.
-  // globalX = (lng + 180) / 360 * 256 * 2^z
-  // globalY = (1 - ln(tan(lat_rad) + 1/cos(lat_rad)) / PI) / 2 * 256 * 2^z
-
-  function toGlobalX(lng, z) {
-    return (lng + 180.0) / 360.0 * 256 * Math.pow(2, z);
-  }
-  function toGlobalY(lat, z) {
-    const latRad = lat * Math.PI / 180.0;
-    return (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * 256 * Math.pow(2, z);
+  // Web Mercator: geo -> global pixels at zoom z
+  function gpx(lng, z) { return (lng + 180) / 360 * 256 * Math.pow(2, z); }
+  function gpy(lat, z) {
+    var r = lat * Math.PI / 180;
+    return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 256 * Math.pow(2, z);
   }
 
-  // Calculate bounds from route
-  const allLats = rd.routeCoords.map(c => c[0]);
-  const allLngs = rd.routeCoords.map(c => c[1]);
-  const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
-  const minLng = Math.min(...allLngs), maxLng = Math.max(...allLngs);
+  // Find zoom: route fits with 40% margin
+  var lats = rd.routeCoords.map(function(c) { return c[0]; });
+  var lngs = rd.routeCoords.map(function(c) { return c[1]; });
+  var cLat = (Math.min.apply(null, lats) + Math.max.apply(null, lats)) / 2;
+  var cLng = (Math.min.apply(null, lngs) + Math.max.apply(null, lngs)) / 2;
 
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLng = (minLng + maxLng) / 2;
-
-  // Find optimal zoom: highest zoom where route + padding fits in canvas
-  let zoom = 12;
-  for (let z = 17; z >= 3; z--) {
-    const topY    = toGlobalY(maxLat, z);
-    const bottomY = toGlobalY(minLat, z);
-    const leftX   = toGlobalX(minLng, z);
-    const rightX  = toGlobalX(maxLng, z);
-    const routeW = Math.abs(rightX - leftX);
-    const routeH = Math.abs(bottomY - topY);
-    // Route must fit with 25% padding on each side
-    if (routeW * 1.5 <= W && routeH * 1.5 <= H) {
-      zoom = z;
-      break;
-    }
+  var zoom = 12;
+  for (var z = 16; z >= 3; z--) {
+    var rw = gpx(Math.max.apply(null, lngs), z) - gpx(Math.min.apply(null, lngs), z);
+    var rh = gpy(Math.min.apply(null, lats), z) - gpy(Math.max.apply(null, lats), z);
+    if (rw * 1.4 < W && rh * 1.4 < H) { zoom = z; break; }
   }
 
-  // Center in global pixels
-  const centerGX = toGlobalX(centerLng, zoom);
-  const centerGY = toGlobalY(centerLat, zoom);
+  // Origin of canvas in global pixel space
+  var cx = gpx(cLng, zoom), cy = gpy(cLat, zoom);
+  var ox = cx - W / 2, oy = cy - H / 2;
 
-  // Convert geo coords to canvas pixel
-  function geoToCanvas(lat, lng) {
-    const gx = toGlobalX(lng, zoom);
-    const gy = toGlobalY(lat, zoom);
-    return {
-      x: gx - centerGX + W / 2,
-      y: gy - centerGY + H / 2
-    };
+  function toXY(lat, lng) {
+    return { x: gpx(lng, zoom) - ox, y: gpy(lat, zoom) - oy };
   }
 
   // Background
-  ctx.fillStyle = '#dde6dd';
+  ctx.fillStyle = '#d4dadc';
   ctx.fillRect(0, 0, W, H);
 
-  // === Fetch and draw map tiles ===
-  // Canvas top-left in global pixels
-  const originGX = centerGX - W / 2;
-  const originGY = centerGY - H / 2;
+  // Tile range
+  var mt = Math.pow(2, zoom);
+  var txMin = Math.max(0, Math.floor(ox / 256));
+  var txMax = Math.min(mt - 1, Math.floor((ox + W) / 256));
+  var tyMin = Math.max(0, Math.floor(oy / 256));
+  var tyMax = Math.min(mt - 1, Math.floor((oy + H) / 256));
 
-  // Tile range that covers the canvas
-  const tileMinX = Math.floor(originGX / 256);
-  const tileMinY = Math.floor(originGY / 256);
-  const tileMaxX = Math.floor((originGX + W) / 256);
-  const tileMaxY = Math.floor((originGY + H) / 256);
-  const maxTile = Math.pow(2, zoom) - 1;
-
-  const tileJobs = [];
-  for (let tx = tileMinX; tx <= tileMaxX; tx++) {
-    for (let ty = tileMinY; ty <= tileMaxY; ty++) {
-      if (tx < 0 || ty < 0 || tx > maxTile || ty > maxTile) continue;
-      // Canvas position of this tile's top-left corner
-      const canvasX = tx * 256 - originGX;
-      const canvasY = ty * 256 - originGY;
-      const url = `https://tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`;
-      tileJobs.push({ url, canvasX, canvasY });
+  var jobs = [];
+  for (var tx = txMin; tx <= txMax; tx++) {
+    for (var ty = tyMin; ty <= tyMax; ty++) {
+      jobs.push({ tx: tx, ty: ty, dx: tx * 256 - ox, dy: ty * 256 - oy });
     }
   }
 
-  // Load all tiles in parallel
-  const tiles = await Promise.all(tileJobs.map(job =>
-    new Promise(resolve => {
-      const img = new Image();
+  var subs = ['a', 'b', 'c'];
+  var tiles = await Promise.all(jobs.map(function(j, i) {
+    return new Promise(function(resolve) {
+      var img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => resolve({ img, x: job.canvasX, y: job.canvasY, ok: true });
-      img.onerror = () => resolve({ ok: false });
-      img.src = job.url;
-    })
-  ));
+      img.onload = function() { resolve({ img: img, x: j.dx, y: j.dy, ok: true }); };
+      img.onerror = function() { resolve({ ok: false }); };
+      img.src = 'https://' + subs[i % 3] + '.tile.openstreetmap.org/' + zoom + '/' + j.tx + '/' + j.ty + '.png';
+    });
+  }));
 
-  // Draw tiles
-  for (const t of tiles) {
-    if (t.ok) ctx.drawImage(t.img, t.x, t.y, 256, 256);
-  }
+  tiles.forEach(function(t) { if (t.ok) ctx.drawImage(t.img, t.x, t.y, 256, 256); });
 
-  // === Draw route line ===
+  // Route line
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  // White outline
-  ctx.beginPath(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 7;
-  rd.routeCoords.forEach((c, i) => {
-    const p = geoToCanvas(c[0], c[1]);
-    i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
-  });
-  ctx.stroke();
-  // Green line
-  ctx.beginPath(); ctx.strokeStyle = '#2a7363'; ctx.lineWidth = 4;
-  rd.routeCoords.forEach((c, i) => {
-    const p = geoToCanvas(c[0], c[1]);
-    i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
-  });
-  ctx.stroke();
+  function stroke(color, w) {
+    ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = w;
+    rd.routeCoords.forEach(function(c, i) {
+      var p = toXY(c[0], c[1]);
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    });
+    ctx.stroke();
+  }
+  stroke('#ffffff', 7);
+  stroke('#2a7363', 4);
 
-  // === Draw markers ===
-  function drawMarker(lat, lng, color, label, name) {
-    const p = geoToCanvas(lat, lng);
-    // Shadow
-    ctx.beginPath(); ctx.arc(p.x + 1, p.y + 2, 16, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill();
-    // Circle
-    ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+  // Markers
+  function marker(lat, lng, color, ch, name) {
+    var p = toXY(lat, lng);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, 2 * Math.PI);
     ctx.fillStyle = color; ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
-    // Letter
     ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(label, p.x, p.y);
-    // Name tag
+    ctx.fillText(ch, p.x, p.y);
     if (name) {
       ctx.font = 'bold 11px sans-serif';
-      const tw = ctx.measureText(name).width;
+      var tw = ctx.measureText(name).width;
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillRect(p.x - tw / 2 - 4, p.y - 32, tw + 8, 16);
+      ctx.fillRect(p.x - tw / 2 - 4, p.y - 34, tw + 8, 18);
       ctx.strokeStyle = color; ctx.lineWidth = 1;
-      ctx.strokeRect(p.x - tw / 2 - 4, p.y - 32, tw + 8, 16);
+      ctx.strokeRect(p.x - tw / 2 - 4, p.y - 34, tw + 8, 18);
       ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(name, p.x, p.y - 24);
+      ctx.fillText(name, p.x, p.y - 25);
     }
   }
-  drawMarker(rd.departCoords[0], rd.departCoords[1], '#e05040', '出', rd.departName);
-  drawMarker(rd.destCoords[0], rd.destCoords[1], '#3a8f7c', '着', rd.destName);
+  marker(rd.departCoords[0], rd.departCoords[1], '#e05040', '\u51fa', rd.departName);
+  marker(rd.destCoords[0], rd.destCoords[1], '#3a8f7c', '\u7740', rd.destName);
 
   // Distance badge
-  const badge = '\u7D04 ' + rd.distanceKm + ' km';
   ctx.font = 'bold 12px sans-serif';
-  const bw = ctx.measureText(badge).width;
+  var badge = '\u7d04 ' + rd.distanceKm + ' km';
+  var bw = ctx.measureText(badge).width;
   ctx.fillStyle = 'rgba(42,115,99,0.9)';
-  ctx.fillRect(W - bw - 28, 10, bw + 16, 24);
+  ctx.fillRect(W - bw - 24, 8, bw + 16, 24);
   ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(badge, W - bw - 20, 22);
+  ctx.fillText(badge, W - bw - 16, 20);
 
   // Attribution
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillRect(0, H - 20, W, 20);
-  ctx.fillStyle = '#666'; ctx.font = '10px sans-serif';
+  ctx.fillRect(0, H - 18, W, 18);
+  ctx.fillStyle = '#666'; ctx.font = '9px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText('\u00A9 OpenStreetMap contributors | Route: OSRM', 4, H - 5);
+  ctx.fillText('\u00a9 OpenStreetMap contributors | Route: OSRM', 4, H - 4);
 
-  return canvas.toDataURL('image/png', 0.92);
+  return canvas.toDataURL('image/png', 0.9);
 }
 
 function showRouteInfo(rd) {
-  const infoDiv = document.getElementById('routeInfo');
-  const depCoord = `<span style="font-size:.72rem;color:#999;">[${rd.departCoords[0].toFixed(5)}, ${rd.departCoords[1].toFixed(5)}]</span>`;
-  const destCoord = `<span style="font-size:.72rem;color:#999;">[${rd.destCoords[0].toFixed(5)}, ${rd.destCoords[1].toFixed(5)}]</span>`;
-  const depResolved = rd.departResolved ? `<span style="font-size:.78rem;color:var(--text-light);">→ ${escapeHtml(rd.departResolved)}</span>` : '';
-  const destResolved = rd.destResolved ? `<span style="font-size:.78rem;color:var(--text-light);">→ ${escapeHtml(rd.destResolved)}</span>` : '';
-  infoDiv.innerHTML = `
-    <strong>出発:</strong> ${escapeHtml(rd.departName)} ${depResolved} ${depCoord}<br>
-    <strong>目的地:</strong> ${escapeHtml(rd.destName)} ${destResolved} ${destCoord}<br>
-    <strong>距離:</strong> 約 ${rd.distanceKm} km　｜　<strong>所要時間目安:</strong> 約 ${rd.durationMin} 分（道路状況により変動）`;
-  infoDiv.style.display = 'block';
-}
-
-// Validate coordinates are within Japan
-function isValidJapanCoords(lat, lng) {
-  return lat >= 24 && lat <= 46 && lng >= 122 && lng <= 154;
+  var el = document.getElementById('routeInfo');
+  var glink = rd.gmapUrl ? ' <a href="' + rd.gmapUrl + '" target="_blank" rel="noopener" style="color:var(--primary);font-size:.82rem;font-weight:600;">\u27a1 Google Maps\u3067\u78ba\u8a8d</a>' : '';
+  el.innerHTML =
+    '<strong>\u51fa\u767a:</strong> ' + escapeHtml(rd.departName) + ' <span style="font-size:.72rem;color:#aaa;">[' + rd.departCoords[0].toFixed(5) + ', ' + rd.departCoords[1].toFixed(5) + ']</span><br>' +
+    '<strong>\u76ee\u7684\u5730:</strong> ' + escapeHtml(rd.destName) + ' <span style="font-size:.72rem;color:#aaa;">[' + rd.destCoords[0].toFixed(5) + ', ' + rd.destCoords[1].toFixed(5) + ']</span><br>' +
+    '<strong>\u8ddd\u96e2:</strong> \u7d04 ' + rd.distanceKm + ' km\u3000\uff5c\u3000<strong>\u6240\u8981\u6642\u9593\u76ee\u5b89:</strong> \u7d04 ' + rd.durationMin + ' \u5206\uff08\u9053\u8def\u72b6\u6cc1\u306b\u3088\u308a\u5909\u52d5\uff09' + glink;
+  el.style.display = 'block';
 }
 
 function clearRouteMap() {
@@ -1373,7 +1311,7 @@ function clearRouteMap() {
   document.getElementById('routeMapWrap').classList.remove('show');
   document.getElementById('routeInfo').style.display = 'none';
   document.getElementById('btn_route_clear').style.display = 'none';
-  toast('ルートマップをクリアしました');
+  toast('\u30eb\u30fc\u30c8\u30de\u30c3\u30d7\u3092\u30af\u30ea\u30a2\u3057\u307e\u3057\u305f');
 }
 
 // ── Wikipedia API for Photos ──
