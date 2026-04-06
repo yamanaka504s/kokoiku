@@ -210,8 +210,7 @@
   }
   .btn:active { transform: scale(.97); }
   .btn-preview { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; }
-  .btn-print { background: #555; color: #fff; }
-  .btn-clear { background: #eee; color: #555; flex: 0; min-width: 100px; }
+  .btn-clear { background: #eee; color: #555; flex: 1; min-width: 160px; white-space: nowrap; }
 
   /* Modal */
   .modal-overlay {
@@ -232,7 +231,9 @@
     padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end;
   }
   .modal-actions .btn { flex: 0; min-width: 140px; font-size: .9rem; padding: 10px 20px; }
-  .btn-copy-doc { background: var(--success); color: #fff; }
+  .btn-pdf-save { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; flex: 1 !important; min-width: 200px !important; font-size: 1rem !important; padding: 14px 20px !important; }
+  .btn-pdf-share { background: linear-gradient(135deg, #34b7f1, #0088cc); color: #fff; flex: 1 !important; min-width: 120px !important; font-size: 1rem !important; padding: 14px 20px !important; }
+  .modal-actions { flex-wrap: wrap; }
 
   /* Print Doc */
   .print-doc { font-size: .85rem; }
@@ -355,6 +356,8 @@
     .print-doc .route-map-print img { width: 100%; max-width: 100%; }
   }
 </style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -641,7 +644,6 @@
   <div class="section">
     <div class="actions">
       <button class="btn btn-preview" onclick="showPreview()">計画書をプレビュー</button>
-      <button class="btn btn-print" onclick="printDoc()">印刷 / PDF保存</button>
       <button class="btn btn-clear" onclick="clearAll()">リセット</button>
     </div>
   </div>
@@ -656,9 +658,10 @@
     </div>
     <div class="modal-body" id="previewBody"></div>
     <div class="modal-actions no-print">
-      <button class="btn btn-copy-doc" onclick="copyDoc()">計画書をコピー</button>
-      <button class="btn btn-print" onclick="printDoc()">印刷 / PDF保存</button>
-      <button class="btn btn-clear" onclick="document.getElementById('modalOverlay').classList.remove('show')">閉じる</button>
+      <button class="btn btn-pdf-save" id="btnPdfSave" onclick="savePdf()">PDFファイルで保存</button>
+      <button class="btn btn-pdf-share" id="btnPdfPrint" onclick="window.print()" style="display:none;">PDFを印刷する</button>
+      <button class="btn btn-pdf-share" id="btnPdfShare" onclick="sharePdfFile()" style="display:none;">PDFを共有する</button>
+      <button class="btn btn-clear" onclick="closeAndResetPdf()">閉じる</button>
     </div>
   </div>
 </div>
@@ -1898,16 +1901,121 @@ function buildDoc() {
 </div>`;
 }
 
-function copyDoc() {
-  const text = document.getElementById('previewBody').innerText.replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n').trim();
-  navigator.clipboard.writeText(text).then(() => toast('計画書をコピーしました'));
+let lastPdfBlob = null;
+let lastPdfFileName = '';
+
+function resetPdfButtons() {
+  document.getElementById('btnPdfSave').style.display = '';
+  document.getElementById('btnPdfPrint').style.display = 'none';
+  document.getElementById('btnPdfShare').style.display = 'none';
+  lastPdfBlob = null;
 }
 function showPreview() {
   document.getElementById('previewBody').innerHTML = buildDoc();
   document.getElementById('modalOverlay').classList.add('show');
+  resetPdfButtons();
 }
-function closeModal(e) { if (e.target === e.currentTarget) document.getElementById('modalOverlay').classList.remove('show'); }
-function printDoc() { showPreview(); setTimeout(() => window.print(), 300); }
+function closeModal(e) { if (e.target === e.currentTarget) closeAndResetPdf(); }
+function closeAndResetPdf() {
+  document.getElementById('modalOverlay').classList.remove('show');
+  resetPdfButtons();
+}
+
+async function savePdf() {
+  const btn = document.getElementById('btnPdfSave');
+  btn.textContent = 'PDF作成中...';
+  btn.disabled = true;
+
+  const offscreen = document.createElement('div');
+  offscreen.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;background:#fff;z-index:-1;';
+  offscreen.innerHTML = buildDoc();
+  document.body.appendChild(offscreen);
+
+  try {
+    await new Promise(r => setTimeout(r, 300));
+    const canvas = await html2canvas(offscreen, {
+      scale: 2, useCORS: true, allowTaint: true,
+      backgroundColor: '#ffffff', width: 760, windowWidth: 760
+    });
+    document.body.removeChild(offscreen);
+
+    const { jsPDF } = window.jspdf;
+    const pdfWidth = 210, pdfHeight = 297;
+    const imgWidth = pdfWidth - 20;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageContentHeight = pdfHeight - 20;
+
+    if (imgHeight <= pageContentHeight) {
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 10, 10, imgWidth, imgHeight);
+    } else {
+      let srcY = 0, remainingHeight = imgHeight, page = 0;
+      while (remainingHeight > 0) {
+        if (page > 0) pdf.addPage();
+        const sliceHeight = Math.min(pageContentHeight, remainingHeight);
+        const sliceCanvasHeight = (sliceHeight / imgHeight) * canvas.height;
+        const sc = document.createElement('canvas');
+        sc.width = canvas.width; sc.height = sliceCanvasHeight;
+        const ctx = sc.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, sc.width, sc.height);
+        ctx.drawImage(canvas, 0, srcY, canvas.width, sliceCanvasHeight, 0, 0, canvas.width, sliceCanvasHeight);
+        pdf.addImage(sc.toDataURL('image/jpeg', 0.92), 'JPEG', 10, 10, imgWidth, sliceHeight);
+        srcY += sliceCanvasHeight;
+        remainingHeight -= sliceHeight;
+        page++;
+      }
+    }
+
+    const name = getVal('userName') || '計画書';
+    lastPdfFileName = `${name}さん個別外出計画書.pdf`;
+    lastPdfBlob = pdf.output('blob');
+
+    const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      toast('PDFを作成しました');
+      btn.style.display = 'none';
+      document.getElementById('btnPdfShare').style.display = '';
+    } else {
+      const url = URL.createObjectURL(lastPdfBlob);
+      const a = document.createElement('a');
+      a.href = url; a.download = lastPdfFileName; a.click();
+      URL.revokeObjectURL(url);
+      toast('PDFを保存しました');
+      btn.style.display = 'none';
+      document.getElementById('btnPdfPrint').style.display = '';
+    }
+  } catch (e) {
+    if (offscreen.parentNode) document.body.removeChild(offscreen);
+    console.error(e);
+    toast('PDF作成に失敗しました');
+  } finally {
+    btn.textContent = 'PDFファイルで保存';
+    btn.disabled = false;
+  }
+}
+
+async function sharePdfFile() {
+  if (!lastPdfBlob) { toast('先にPDFを保存してください'); return; }
+  const file = new File([lastPdfBlob], lastPdfFileName, { type: 'application/pdf' });
+  try {
+    if (navigator.share) {
+      await navigator.share({ files: [file] });
+      toast('共有しました');
+    } else {
+      const url = URL.createObjectURL(lastPdfBlob);
+      const a = document.createElement('a');
+      a.href = url; a.download = lastPdfFileName; a.click();
+      URL.revokeObjectURL(url);
+      toast('PDFをダウンロードしました。ファイルから共有してください');
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      toast('共有できませんでした');
+      console.error(e);
+    }
+  }
+}
 function clearAll() {
   if (!confirm('すべての入力をリセットしますか？')) return;
   FIELDS.forEach(id => {
