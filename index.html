@@ -674,6 +674,56 @@ const _j = a => a.map(s => s.split('').reverse().join('')).join('');
 const DEFAULT_API_KEY = _j(['ipa-tna-ks','J3BSGXg-30','7oEF3ImRzO','1E1zVNkds-','oJLq7Dw5GV','q5LimVR2Dz','N0iCuTwRIH','wLhQnMfCsT','_OQJtmg75E','-wAsExoNCg','AAAdhHJW']);
 const OPENAI_API_KEY = _j(['Um-jorp-ks','XFFU9wCMxs','0dS18_I768','PsF4gY7Fyo','wu2DS9_LO_','PupfYtGYSi','kVJWd_SmXK','hHYNatVZVf','JFkblB3T-s','x6WgkV4y9u','MVAJ4pVyPT','D_63YRk_l1','-njwWK66nN','vS-CfD9G6e','qCb4IAo_HS','HcTNKHcZGm','AQqV']);
 
+// ── 使用モデル（起動時に最新を自動取得。失敗時は下記のフォールバックを使用） ──
+let CLAUDE_MODEL = 'claude-sonnet-4-6';   // フォールバック（文章AI）
+let IMAGE_MODEL  = 'gpt-image-1';         // フォールバック（画像AI）
+
+// 利用可能な画像モデルから最新の gpt-image を選ぶ
+function pickLatestImageModel(ids) {
+  const cands = ids
+    .filter(id => /^gpt-image-\d/.test(id))   // gpt-image-1, gpt-image-1.5, gpt-image-2, ...
+    .filter(id => !id.includes('mini'))        // mini（簡易版）は除外
+    .map(id => {
+      const m = id.match(/^gpt-image-(\d+(?:\.\d+)?)/);
+      return { id, ver: m ? parseFloat(m[1]) : 0, dated: /\d{4}-\d{2}-\d{2}/.test(id) };
+    })
+    // バージョンが高い順 → 同点なら日付なしのエイリアス（常に最新を指す）を優先
+    .sort((a, b) => (b.ver - a.ver) || (a.dated - b.dated));
+  return cands.length ? cands[0].id : null;
+}
+
+// 起動時に各APIから利用可能なモデル一覧を取得し、最新を自動採用する
+async function initModels() {
+  // Claude: 最新の Sonnet を採用（コストと品質のバランス）
+  try {
+    const apiKey = localStorage.getItem('outingPlan_apiKey') || DEFAULT_API_KEY;
+    const r = await fetch('https://api.anthropic.com/v1/models?limit=100', {
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      }
+    });
+    if (r.ok) {
+      const ids = ((await r.json()).data || []).map(m => m.id); // 新しい順で返る
+      const sonnet = ids.find(id => id.includes('sonnet'));
+      if (sonnet) CLAUDE_MODEL = sonnet;
+    }
+  } catch (e) { /* フォールバックを使用 */ }
+
+  // OpenAI: 最新の gpt-image を採用
+  try {
+    const r = await fetch('https://api.openai.com/v1/models', {
+      headers: { 'Authorization': 'Bearer ' + OPENAI_API_KEY }
+    });
+    if (r.ok) {
+      const ids = ((await r.json()).data || []).map(m => m.id);
+      const img = pickLatestImageModel(ids);
+      if (img) IMAGE_MODEL = img;
+    }
+  } catch (e) { /* フォールバックを使用 */ }
+}
+
 const GENKI_ADDRESS = '岡山県倉敷市徳芳501-1';
 
 // ── Setup ──
@@ -746,6 +796,7 @@ let illustCount = parseInt(localStorage.getItem('outing_illust_count') || '0', 1
 const ILLUST_MAX = 3;
 
 window.addEventListener('DOMContentLoaded', () => {
+  initModels();  // 最新モデルをバックグラウンドで自動取得
   FIELDS.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -867,7 +918,7 @@ async function callClaude(systemPrompt, messages, maxTokens) {
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_MODEL,
       max_tokens: maxTokens || 1024,
       system: systemPrompt,
       messages: messages
@@ -1597,7 +1648,7 @@ async function generateIllust() {
   const preview = document.getElementById('illust_preview');
   const area = document.getElementById('illust_area');
   area.classList.add('show');
-  preview.innerHTML = '<p style="color:var(--text-light);font-size:.9rem;padding:20px 0;">DALL-E 3でイラストを生成中...（30〜60秒ほどお待ちください）</p>';
+  preview.innerHTML = '<p style="color:var(--text-light);font-size:.9rem;padding:20px 0;">イラストを生成中...（30〜60秒ほどお待ちください）</p>';
 
   const context = gatherAllContext();
   const subtitle = cleanMarkdown(aiResults['subtitle']) || '';
@@ -1641,12 +1692,11 @@ Rules:
         'Authorization': 'Bearer ' + openaiKey
       },
       body: JSON.stringify({
-        model: 'dall-e-3',
+        model: IMAGE_MODEL,
         prompt: imagePrompt.trim().substring(0, 4000),
         n: 1,
-        size: '1792x1024',
-        quality: 'standard',
-        response_format: 'b64_json'
+        size: '1536x1024',
+        quality: 'medium'
       })
     });
     if (!res.ok) {
