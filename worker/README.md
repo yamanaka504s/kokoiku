@@ -123,14 +123,44 @@ https://dash.cloudflare.com/sign-up からメールアドレスで登録しま�
 
 ---
 
-## 手順8：他のアプリも切り替える（順次でOK）
+## 手順8：他のアプリも切り替える（対応済み）
 
-姉妹アプリ（誕生日計画ほか）も、**同じ中継サーバーをそのまま使えます**。各アプリの `index.html` で
+以下のアプリは**対応済み**です。同じ中継サーバーを共有しています。
+
+| アプリ | リポジトリ |
+|---|---|
+| ココイク（個別外出計画） | `kokoiku` |
+| 誕生日計画 | `birthday-plan` |
+| ケアプラン | `ho-chan` |
+| ケアプランショート | `ho-chan-short` |
+| 居宅ケアプラン | `ho-chan-kyotaku` |
+| 月報 | （Git管理外・ローカル） |
+| 週報 | （Git管理外・ローカル） |
+
+新しいアプリを追加する場合も、`index.html` で
 
 - キー定義（`_j`, `DEFAULT_API_KEY`, `OPENAI_API_KEY`）を削除
-- `API_BASE` を追加し、`fetch` 先を中継サーバーに変更
+- `const API_BASE = 'https://kokoiku-api.yamanaka504s.workers.dev';` を追加
+- `fetch` 先を `API_BASE + '/claude/messages'` などに変更
+- 応答の取り出しを `pickText(data)` に（`content[0].text` は使わない）
 
-とすれば同じ構成になります。Worker 側の追加作業はありません。
+とすれば同じ構成になります。**Worker 側の追加作業はありません。**
+
+---
+
+## モデルの指定について
+
+アプリ側でモデルIDを直書きすると、モデルが廃止されたときに全アプリを直す羽目になります。
+これを避けるため、**`model: 'auto'` を指定すると中継サーバーが最新のSonnetを選びます**。
+
+```javascript
+body: JSON.stringify({ model: 'auto', max_tokens: 4096, messages: [...] })
+```
+
+- 画像生成も `model: 'auto'` で最新の `gpt-image` を自動採用します
+- 解決結果は1時間キャッシュされます
+- 使用を許可するモデルは `worker.js` の `ALLOWED_CLAUDE_MODEL`（現在は sonnet / haiku）で制限しています
+  - Opus など高額モデルを使いたい場合はここを編集してください（認証がないため、既定では制限しています）
 
 ---
 

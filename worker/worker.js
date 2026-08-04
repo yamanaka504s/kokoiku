@@ -18,7 +18,8 @@
 
 // 呼び出しを許可するサイト（ALLOWED_ORIGINS 未設定時に使われる）
 const DEFAULT_ORIGINS = [
-  'https://yamanaka504s.github.io',
+  'https://yamanaka504s.github.io',  // GitHub Pages で公開している全アプリ
+  'null',                            // ローカルのHTMLファイルを直接開いた場合（月報・週報など）
   'http://localhost:8000',
   'http://127.0.0.1:8000',
 ];
@@ -29,6 +30,14 @@ const ALLOWED_IMAGE_MODEL = /^gpt-image/i;
 
 // 1リクエストあたりの max_tokens の上限（アプリ側の指定がこれを超えたら切り下げる）
 const MAX_TOKENS_CAP = 8192;
+
+// model に 'auto' を指定された場合に採用するモデル（取得失敗時のフォールバック）
+const FALLBACK_CLAUDE_MODEL = 'claude-sonnet-4-6';
+const FALLBACK_IMAGE_MODEL = 'gpt-image-1';
+
+// 解決結果のキャッシュ（1時間）。モデル一覧を毎回取りに行かないため
+const modelCache = { claude: null, image: null, at: 0 };
+const MODEL_CACHE_MS = 60 * 60 * 1000;
 
 export default {
   async fetch(request, env) {
@@ -56,7 +65,11 @@ export default {
           if (limited) return limited;
 
           const body = await request.json();
-          if (!ALLOWED_CLAUDE_MODEL.test(String(body.model || ''))) {
+          // model 未指定 / 'auto' なら、このサーバーが最新モデルを選ぶ
+          if (!body.model || body.model === 'auto') {
+            body.model = await resolveModel(env, 'claude');
+          }
+          if (!ALLOWED_CLAUDE_MODEL.test(String(body.model))) {
             return errorJson(400, `このサーバーでは ${body.model} は使用できません。`, cors);
           }
           body.max_tokens = Math.min(Number(body.max_tokens) || 1024, MAX_TOKENS_CAP);
@@ -80,7 +93,10 @@ export default {
           if (limited) return limited;
 
           const body = await request.json();
-          if (!ALLOWED_IMAGE_MODEL.test(String(body.model || ''))) {
+          if (!body.model || body.model === 'auto') {
+            body.model = await resolveModel(env, 'image');
+          }
+          if (!ALLOWED_IMAGE_MODEL.test(String(body.model))) {
             return errorJson(400, `このサーバーでは ${body.model} は使用できません。`, cors);
           }
 
@@ -109,6 +125,37 @@ export default {
     }
   },
 };
+
+// ── model:'auto' の解決（最新モデルをこのサーバーが選ぶ） ──
+// 各アプリがモデルIDを直書きしなくて済むようにするための仕組み。
+// モデルが廃止されても、修正はこのサーバー1箇所で済む。
+async function resolveModel(env, kind) {
+  const fresh = Date.now() - modelCache.at < MODEL_CACHE_MS;
+  if (fresh && modelCache[kind]) return modelCache[kind];
+
+  try {
+    if (kind === 'claude') {
+      const r = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: anthropicHeaders(env) });
+      if (r.ok) {
+        const ids = ((await r.json()).data || []).map(m => m.id); // 新しい順で返る
+        const found = ids.find(id => /sonnet/i.test(id));
+        if (found) { modelCache.claude = found; modelCache.at = Date.now(); return found; }
+      }
+    } else {
+      const r = await fetch('https://api.openai.com/v1/models', { headers: openaiHeaders(env) });
+      if (r.ok) {
+        const ids = ((await r.json()).data || []).map(m => m.id);
+        const found = ids
+          .filter(id => /^gpt-image-\d/.test(id) && !id.includes('mini'))
+          .map(id => ({ id, ver: parseFloat(id.match(/^gpt-image-(\d+(?:\.\d+)?)/)[1]), dated: /\d{4}-\d{2}-\d{2}/.test(id) }))
+          .sort((a, b) => (b.ver - a.ver) || (a.dated - b.dated))[0];
+        if (found) { modelCache.image = found.id; modelCache.at = Date.now(); return found.id; }
+      }
+    }
+  } catch (e) { console.error('モデル一覧の取得に失敗', e); }
+
+  return kind === 'claude' ? FALLBACK_CLAUDE_MODEL : FALLBACK_IMAGE_MODEL;
+}
 
 // ── 本家APIへ転送し、応答をそのまま返す ──
 async function proxy(url, init, cors) {
