@@ -919,14 +919,25 @@ async function callClaude(systemPrompt, messages, maxTokens) {
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: maxTokens || 1024,
+      max_tokens: maxTokens || 4096,
       system: systemPrompt,
       messages: messages
     })
   });
   if (!res.ok) { console.error(await res.text()); toast('APIエラーが発生しました。'); throw new Error('API error'); }
   const data = await res.json();
-  return data.content[0].text;
+  // 応答の先頭が thinking ブロックの場合があるため、必ず text ブロックを探す
+  const text = (data.content || [])
+    .filter(b => b && b.type === 'text')
+    .map(b => b.text)
+    .join('')
+    .trim();
+  if (!text) {
+    console.error('No text block in response', data);
+    toast('AIの応答を取得できませんでした。もう一度お試しください。');
+    throw new Error('empty response');
+  }
+  return text;
 }
 
 // ══════════════════════════════════════
@@ -1678,7 +1689,7 @@ Rules:
 
     imagePrompt = await callClaude(promptGen, [
       { role: 'user', content: 'Generate the DALL-E prompt.' }
-    ], 500);
+    ], 2000);
   } catch (e) {
     const dest = getVal('destination') || 'a beautiful park';
     imagePrompt = `Beautiful Japanese anime style illustration of a warm outing from a care facility to ${dest}. An elderly person enjoys the outdoors, accompanied by friendly care staff. Beautiful natural scenery, seasonal flowers and trees, blue sky with gentle clouds. The elderly person looks happy and relaxed. Warm natural lighting, peaceful atmosphere, feeling of freedom and joy. Studio Ghibli inspired, detailed background, soft cel shading. ${detail || ''}. no text, no words, no letters, no watermark`;
@@ -1769,7 +1780,7 @@ async function generateSubtitle() {
   try {
     const result = await callClaude(SUBTITLE_SYSTEM, [
       { role: 'user', content: context }
-    ], 200);
+    ], 2000);
     aiResults['subtitle'] = result;
     localStorage.setItem('outing_ai_subtitle', result);
     const box = document.getElementById('result_subtitle');
@@ -1791,7 +1802,7 @@ async function retrySubtitle(mode) {
       { role: 'user', content: context },
       { role: 'assistant', content: current },
       { role: 'user', content: RETRY_INSTRUCTIONS[mode] }
-    ], 200);
+    ], 2000);
     aiResults['subtitle'] = result;
     localStorage.setItem('outing_ai_subtitle', result);
     const box = document.getElementById('result_subtitle');
