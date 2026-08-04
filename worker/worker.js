@@ -18,8 +18,14 @@
 
 // 呼び出しを許可するサイト（ALLOWED_ORIGINS 未設定時に使われる）
 const DEFAULT_ORIGINS = [
-  'https://yamanaka504s.github.io',  // GitHub Pages で公開している全アプリ
-  'null',                            // ローカルのHTMLファイルを直接開いた場合（月報・週報など）
+  // GitHub Pages で公開しているアプリ（ココイク／誕生日計画／ケアプラン各種）
+  'https://yamanaka504s.github.io',
+  // Google App Engine で公開しているアプリ（月報／週報）
+  'https://geppo-dot-gen-lang-client-0179925161.an.r.appspot.com',
+  'https://shuho-dot-gen-lang-client-0179925161.an.r.appspot.com',
+  // ローカルで動作確認するとき
+  'null',                    // HTMLファイルを直接ブラウザで開いた場合
+  'http://localhost:8080',   // gcloud のローカル実行
   'http://localhost:8000',
   'http://127.0.0.1:8000',
 ];
