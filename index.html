@@ -669,10 +669,10 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// API Keys (obfuscated)
-const _j = a => a.map(s => s.split('').reverse().join('')).join('');
-const DEFAULT_API_KEY = _j(['ipa-tna-ks','J3BSGXg-30','7oEF3ImRzO','1E1zVNkds-','oJLq7Dw5GV','q5LimVR2Dz','N0iCuTwRIH','wLhQnMfCsT','_OQJtmg75E','-wAsExoNCg','AAAdhHJW']);
-const OPENAI_API_KEY = _j(['Um-jorp-ks','XFFU9wCMxs','0dS18_I768','PsF4gY7Fyo','wu2DS9_LO_','PupfYtGYSi','kVJWd_SmXK','hHYNatVZVf','JFkblB3T-s','x6WgkV4y9u','MVAJ4pVyPT','D_63YRk_l1','-njwWK66nN','vS-CfD9G6e','qCb4IAo_HS','HcTNKHcZGm','AQqV']);
+// ── 中継サーバー（Cloudflare Worker）のURL ──
+// APIキーはこのページには置かず、中継サーバー側で保持している。
+// デプロイ後に表示される「https://〇〇.workers.dev」に書き換えること（末尾のスラッシュは不要）。
+const API_BASE = 'https://kokoiku-api.XXXXX.workers.dev';
 
 // ── 使用モデル（起動時に最新を自動取得。失敗時は下記のフォールバックを使用） ──
 let CLAUDE_MODEL = 'claude-sonnet-4-6';   // フォールバック（文章AI）
@@ -696,14 +696,7 @@ function pickLatestImageModel(ids) {
 async function initModels() {
   // Claude: 最新の Sonnet を採用（コストと品質のバランス）
   try {
-    const apiKey = localStorage.getItem('outingPlan_apiKey') || DEFAULT_API_KEY;
-    const r = await fetch('https://api.anthropic.com/v1/models?limit=100', {
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      }
-    });
+    const r = await fetch(API_BASE + '/claude/models');
     if (r.ok) {
       const ids = ((await r.json()).data || []).map(m => m.id); // 新しい順で返る
       const sonnet = ids.find(id => id.includes('sonnet'));
@@ -713,9 +706,7 @@ async function initModels() {
 
   // OpenAI: 最新の gpt-image を採用
   try {
-    const r = await fetch('https://api.openai.com/v1/models', {
-      headers: { 'Authorization': 'Bearer ' + OPENAI_API_KEY }
-    });
+    const r = await fetch(API_BASE + '/openai/models');
     if (r.ok) {
       const ids = ((await r.json()).data || []).map(m => m.id);
       const img = pickLatestImageModel(ids);
@@ -906,17 +897,22 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 3000);
 }
 
-// ── Claude API ──
+// ── サーバーからのエラーメッセージを取り出す（利用上限などを画面に出すため） ──
+async function readError(res, fallback) {
+  try {
+    const body = await res.text();
+    console.error(body);
+    const msg = (JSON.parse(body).error || {}).message;
+    if (msg) return msg;
+  } catch (e) { /* JSON でなければ既定のメッセージ */ }
+  return fallback;
+}
+
+// ── Claude API（中継サーバー経由） ──
 async function callClaude(systemPrompt, messages, maxTokens) {
-  const apiKey = localStorage.getItem('outingPlan_apiKey') || DEFAULT_API_KEY;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch(API_BASE + '/claude/messages', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
       max_tokens: maxTokens || 4096,
@@ -924,7 +920,7 @@ async function callClaude(systemPrompt, messages, maxTokens) {
       messages: messages
     })
   });
-  if (!res.ok) { console.error(await res.text()); toast('APIエラーが発生しました。'); throw new Error('API error'); }
+  if (!res.ok) { toast(await readError(res, 'APIエラーが発生しました。')); throw new Error('API error'); }
   const data = await res.json();
   // 応答の先頭が thinking ブロックの場合があるため、必ず text ブロックを探す
   const text = (data.content || [])
@@ -1650,7 +1646,6 @@ async function generateIllust() {
     toast(`イラスト生成は${ILLUST_MAX}回までです（現在${illustCount}回使用済み）`);
     return;
   }
-  const openaiKey = OPENAI_API_KEY;
   const spinner = document.getElementById('spin_illust');
   const btns = document.getElementById('field_illust').querySelectorAll('button');
   btns.forEach(b => b.disabled = true);
@@ -1696,12 +1691,9 @@ Rules:
   }
 
   try {
-    const res = await fetch('https://api.openai.com/v1/images/generations', {
+    const res = await fetch(API_BASE + '/openai/images', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + openaiKey
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: IMAGE_MODEL,
         prompt: imagePrompt.trim().substring(0, 4000),
