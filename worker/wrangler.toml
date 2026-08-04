@@ -1,0 +1,21 @@
+# Cloudflare Worker の設定ファイル（コマンドラインからデプロイする場合に使用）
+#   デプロイ: npx wrangler deploy      ← このフォルダで実行する
+#
+# APIキーはこのファイルには書かないこと。キーは Secret として別途登録する。
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put OPENAI_API_KEY
+#   （Cloudflare の管理画面 Settings → Variables and Secrets から登録しても同じ）
+
+name = "kokoiku-api"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# 1日の呼び出し上限を有効にする場合は、KVネームスペースを作って以下のコメントを外す
+#   npx wrangler kv namespace create COUNTER
+# [[kv_namespaces]]
+# binding = "COUNTER"
+# id = "（作成時に表示されるIDを貼る）"
+
+# 上限回数を変えたい場合（未設定なら500回/日）
+# [vars]
+# DAILY_LIMIT = "500"
